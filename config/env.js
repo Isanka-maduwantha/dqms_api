@@ -5,4 +5,8 @@ const dotenv = require('dotenv');
 
 dotenv.config({path : path.resolve(process.cwd(), '.env')});
 
-console.log(process.env.PORT)
+
+module.exports = {
+    PORT : process.env.PORT || 3000,
+    JWT_SECRET: process.env.JWT_SECRET
+}
