@@ -5,6 +5,8 @@ const authRoutes = require('./routes/auth')
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
+const dns = require('node:dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudflare DNS
 
 dbConnection();
 app.use(cors({
