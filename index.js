@@ -6,6 +6,9 @@ const appointmentRoutes = require('./routes/appointmentRoutes')
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
+const dns = require('node:dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudflare DNS
+
 dbConnection();
 app.use(cors({
   origin: 'http://localhost:5173',
@@ -26,3 +29,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is Listening on PORT : ${PORT}`)
 })
+
+const receptionistRoutes = require('./routes/receptionistRoutes');
+app.use('/api/receptionist', receptionistRoutes);
