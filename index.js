@@ -28,3 +28,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is Listening on PORT : ${PORT}`)
 })
+
+const receptionistRoutes = require('./routes/receptionistRoutes');
+app.use('/api/receptionist', receptionistRoutes);
