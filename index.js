@@ -2,6 +2,7 @@ const express = require('express');
 const env = require('./config/env')
 const app = express()
 const authRoutes = require('./routes/auth')
+const appointmentRoutes = require('./routes/appointmentRoutes')
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
@@ -15,10 +16,10 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
 // connectDB()
 // app.use('api/register')
 app.use('/api/auth', authRoutes)
+app.use('/api/appointments',appointmentRoutes);
 app.use('/user/patient', require('./routes/patientRoutes'));
 // app.use('/user/admin', require('./routes/adminRoutes'));
 // app.use('/author', require('./routes/authorRouter'));

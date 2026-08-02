@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const env = require('../config/env')
+// @ts-ignore
 exports.verifyToken = (req,res,next) => {
     const token = req.headers['authorization']?.split(' ')[1];
 
@@ -8,6 +9,7 @@ exports.verifyToken = (req,res,next) => {
     }
 
     try {
+        // @ts-ignore
         const decoded = jwt.verify(token,env.JWT_SECRET);
         req.user = decoded;
         next()
