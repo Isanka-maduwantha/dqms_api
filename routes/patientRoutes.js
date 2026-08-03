@@ -1,8 +1,8 @@
 const express = require('express');
 const { getPatientById,getPatientHistory } = require('../controllers/patientController');
 const Router = express.Router()
-const { verifyToken } = require('../middleware/auth')
-Router.get('/',verifyToken,(req,res)=> {
+const { authenticateToken } = require('../middleware/auth')
+Router.get('/',authenticateToken,(req,res)=> {
     res.send("These Are patients List");
 })
 Router.get('/:id',getPatientById);
