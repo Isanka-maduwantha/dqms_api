@@ -1,5 +1,6 @@
 const Appointments = require('../models/Appointments');
 const { validateAppointmentSlot } = require('../helpers/appointmentValidator');
+const { generateAppointmentSlipPdf } = require('../helpers/generateAppointmentSlipPdf');
 // @ts-ignore
 async function getUpcomingAppointments(req, res) {
     try {
@@ -106,7 +107,34 @@ async function rescheduleAppointment(req, res) {
         });
     }
 }
-async function getPatientHistory(req, res) {
 
+// @ts-ignore
+async function generateSlip(req,res) {
+    try{
+        const id = req.user.id;
+        console.log(id);
+
+        const { _id } = req.body;
+
+        const appointment =  await Appointments.findOne({
+            _id:_id
+        })
+        if( !appointment ) {
+            const error = new Error("Appointment Dosen't Exist");
+            // @ts-ignore
+            error.statusCode = 400;
+            throw error;
+        }
+        const slip = await generateAppointmentSlipPdf(appointment)
+        if( !slip){
+            throw new Error("Pdf Invalid")
+        }
+         res.setHeader("Content-Type",slip.contentType);
+        res.setHeader(slip.setHeader,slip.attachment);
+        res.send(slip.pdf);
+
+    } catch (error) {
+        console.log(error)
+    }
 }
-module.exports = { getUpcomingAppointments, rescheduleAppointment, cancelAppointment, getPatientHistory }
+module.exports = { getUpcomingAppointments, rescheduleAppointment, cancelAppointment, generateSlip }
