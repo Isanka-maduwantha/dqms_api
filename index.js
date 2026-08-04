@@ -3,6 +3,8 @@ const env = require('./config/env')
 const app = express()
 const authRoutes = require('./routes/auth')
 const appointmentRoutes = require('./routes/appointmentRoutes')
+const receptionistRoutes = require('./routes/receptionistRoutes');
+const patientRoutes = require('./routes/patientRoutes');
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
@@ -20,7 +22,8 @@ app.use(express.json());
 // app.use('api/register')
 app.use('/api/auth', authRoutes)
 app.use('/api/appointments',appointmentRoutes);
-app.use('/user/patient', require('./routes/patientRoutes'));
+app.use('/api/receptionist', receptionistRoutes);
+app.use('/api/patient', patientRoutes);
 // app.use('/user/admin', require('./routes/adminRoutes'));
 // app.use('/author', require('./routes/authorRouter'));
 app.get('/', (req, res) => {
@@ -29,6 +32,3 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is Listening on PORT : ${PORT}`)
 })
-
-const receptionistRoutes = require('./routes/receptionistRoutes');
-app.use('/api/receptionist', receptionistRoutes);
