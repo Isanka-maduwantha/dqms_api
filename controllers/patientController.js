@@ -1,9 +1,10 @@
 const Appointments = require('../models/Appointments');
-
+const { validateAppointmentSlot } = require('../helpers/appointmentValidator');
 // @ts-ignore
 async function getUpcomingAppointments(req, res) {
     try {
-        const patientid = req.user.userId;
+        const patientid = req.user.id;
+console.log(patientid)
         const upAppointments = await Appointments.find({
             patientId: patientid
         })
@@ -13,7 +14,7 @@ async function getUpcomingAppointments(req, res) {
             message: "Upcoming Appointments ",
             upcomingAppointments: upAppointments
         })
-        console.log(patientid)
+        
     } catch (error) {
         res.json({
             "error": error
@@ -23,9 +24,9 @@ async function getUpcomingAppointments(req, res) {
 
 }
 //  @ts-ignore
-async function cancelAppointment(req,res){
-    try{
-        const userId = req.user.userId;
+async function cancelAppointment(req, res) {
+    try {
+        const userId = req.user.id;
         console.log(userId);
         const { _id } = req.body;
         const appointment = await Appointments.findOne({
@@ -34,27 +35,78 @@ async function cancelAppointment(req,res){
             status: 'BOOKED'
         })
         console.log(appointment)
-        if(!appointment){
+        if (!appointment) {
             return res.status(404).json({
-                success:false,
+                success: false,
                 message: "Appointment not found , already cancelled, or unauthorized"
             })
         }
-        
+
         appointment.status = "CANCELLED";
         const savedAppointment = await appointment.save();
         console.log(savedAppointment);
 
-       return res.status(200).json({
-        success: true,
-        message: "Appointment Cancelled Successfully"
-       })
+        return res.status(200).json({
+            success: true,
+            message: "Appointment Cancelled Successfully"
+        })
 
     } catch (error) {
         console.log(error)
     }
 }
+// @ts-ignore
+async function rescheduleAppointment(req, res) {
+    try {
+        const userId = req.user;
+        const { _id, appointmentDate, startTime, endTime } = req.body;
+        await validateAppointmentSlot(appointmentDate,startTime);
+        // const isAppointmentExist = await Appointments.findOne({
+        //     appointmentDate,
+        //     startTime,
+        // });
+
+        // if (isAppointmentExist) {
+        //     return res.status(400).json({
+        //         error: 'Appointment already exists At The Selected Time Choose Another',
+        //     });
+        // }
+
+        const appointment = await Appointments.findOneAndUpdate(
+            { _id: _id },
+            {
+                $set: {
+                    appointmentDate: appointmentDate,
+                    startTime: startTime,
+                    endTime: endTime,
+                    status: "BOOKED"
+                }
+            },
+            { returnDocument: 'after' }
+
+        )
+        if (!appointment) {
+            return res.status(400).json({
+                "error": "Appointment does not Exist"
+            }
+            )
+        }
+        return res.status(201).json({
+            success: true,
+            "message": "Appointment Rescheduled Successfully",
+            "appointment":appointment
+        })
+
+    } catch (error) {
+        // @ts-ignore
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            // @ts-ignore
+            message: error.message || 'Internal Server Error',
+        });
+    }
+}
 async function getPatientHistory(req, res) {
 
 }
-module.exports = { getUpcomingAppointments,cancelAppointment, getPatientHistory }
+module.exports = { getUpcomingAppointments, rescheduleAppointment, cancelAppointment, getPatientHistory }
