@@ -79,7 +79,7 @@ async function getSlots(req, res) {
 // @ts-ignore
 async function bookAppointment(req, res) {
     try {
-        const patientId = req.user.userId;
+        const patientId = req.user.id;
         const {
             appointmentDate,
             startTime,
