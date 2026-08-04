@@ -87,26 +87,20 @@ async function bookAppointment(req, res) {
             endTime,
         } = req.body;
 
-
-
-  
-
         await validateAppointmentSlot(appointmentDate,startTime);
-
         const appointment = {
             patientId,
             appointmentDate,
             startTime,
             endTime,
         };
-
         // console.log(appointment);
-        await Appointments.create(appointment);
+        const newAppointment = await Appointments.create(appointment);
 
-        return res.json({
+        return res.status(201).json({
             success: true,
             message: 'Appointment booked Successfully',
-            appointment,
+            newAppointment,
         });
     } catch (error) {
         // @ts-ignore
