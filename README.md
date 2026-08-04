@@ -6,5 +6,6 @@ Database : MongoDB
 ```
 Endpoints
 
- - For Login/auth/api/login
+ - For Login /api/auth/login
+ - For Booking /api/
 ```

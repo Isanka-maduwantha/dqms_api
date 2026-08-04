@@ -2,9 +2,14 @@ const express = require('express');
 const env = require('./config/env')
 const app = express()
 const authRoutes = require('./routes/auth')
+const appointmentRoutes = require('./routes/appointmentRoutes')
+const receptionistRoutes = require('./routes/receptionistRoutes');
+const patientRoutes = require('./routes/patientRoutes');
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
+const dns = require('node:dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudflare DNS
 
 dbConnection();
 app.use(cors({
@@ -13,11 +18,12 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
 // connectDB()
 // app.use('api/register')
 app.use('/api/auth', authRoutes)
-app.use('/user/patient', require('./routes/patientRoutes'));
+app.use('/api/appointments',appointmentRoutes);
+app.use('/api/receptionist', receptionistRoutes);
+app.use('/api/patient', patientRoutes);
 // app.use('/user/admin', require('./routes/adminRoutes'));
 // app.use('/author', require('./routes/authorRouter'));
 app.get('/', (req, res) => {

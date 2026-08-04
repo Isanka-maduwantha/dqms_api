@@ -24,8 +24,9 @@ async function login(req,res) {
         }
         const token = jwt.sign(
             {
-                userId: existingUser.id,
+                id: existingUser.id,
                 email: existingUser.email,
+                role: existingUser.role
 
             },
             env.JWT_SECRET || "some-long-random-secret",
@@ -52,8 +53,8 @@ async function login(req,res) {
 // @ts-ignore
 async function registerUser(req,res){
     try{
-        const {name,email,password,role} = req.body;
-
+        const {name, nic, phone, email, password, role} = req.body;
+        console.log(req.body);
         const existingUser = await User.findOne({email});
 
         if(existingUser) {
@@ -65,10 +66,12 @@ async function registerUser(req,res){
 
         const newUser = await User.create(
             {
-                name,
-                email,
-                passwordHash,
-                role: role || 'patient',
+            name,
+            nic,
+            phone,
+            email,
+            passwordHash,
+            role: role || "patient",
             }
         )
         res.status(201).json({
