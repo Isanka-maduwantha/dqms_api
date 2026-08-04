@@ -24,8 +24,9 @@ async function login(req,res) {
         }
         const token = jwt.sign(
             {
-                userId: existingUser.id,
+                id: existingUser.id,
                 email: existingUser.email,
+                role: existingUser.role
 
             },
             env.JWT_SECRET || "some-long-random-secret",
