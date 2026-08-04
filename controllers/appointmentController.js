@@ -3,7 +3,8 @@
 const WorkingHours = require('../models/WorkingHours');
 const DoctorLeave = require('../models/DoctorLeave');
 const Appointments = require('../models/Appointments');
-
+const {validateAppointmentSlot} = require('../helpers/appointmentValidator');
+const { parseTimeToDate,formatHHMM} = require('../helpers/timeDateFunctions')
 // Getting Avaliable Slots 
 // @ts-ignore
 async function getSlots(req, res) {
@@ -86,48 +87,11 @@ async function bookAppointment(req, res) {
             endTime,
         } = req.body;
 
-        // console.log(req.body);
-
-        if (!appointmentDate || !startTime) {
-            return res.status(400).json({ error: 'All Appointment Data is Required' });
-        }
-
-        const bookingDate = parseTimeToDate(appointmentDate, startTime);
-        // console.log(bookingDate);
-
-        const currentTime = new Date();
-
-        if (bookingDate < currentTime) {
-            return res.status(400).json({ error: 'Cannot Book appointments in past' });
-        }
-
-        const dayName = getDateName(appointmentDate);
-        const schedule = await WorkingHours.findOne({ dayOfWeek: dayName });
 
 
-        if (!schedule) {
-            return res.json({ slots: [], message: `Clinic Closed on ${dayName}` });
-        }
+  
 
-        const isAppointmentExist = await Appointments.findOne({
-            appointmentDate,
-            startTime,
-        });
-
-        if (isAppointmentExist) {
-            return res.status(400).json({
-                error: 'Appointment Exist At The Selected Time Choose Another',
-            });
-        }
-
-        const leaves = await DoctorLeave.findOne({ leaveDate: appointmentDate });
-
-
-        if (leaves) {
-            return res.status(400).json({
-                error: 'Doctor is on Leave',
-            });
-        }
+        await validateAppointmentSlot(appointmentDate,startTime);
 
         const appointment = {
             patientId,
@@ -145,41 +109,16 @@ async function bookAppointment(req, res) {
             appointment,
         });
     } catch (error) {
-        res.status(500).json({
-            message: error,
+        // @ts-ignore
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({
+            // @ts-ignore
+            message: error.message || 'Internal Server Error',
         });
     }
 }
 
-/**
- * 
- * @param {string} dateStr 
- * @param {string} timeStr 
- * @returns 
- */
-function parseTimeToDate(dateStr, timeStr) {
-    const [hours, minutes] = timeStr.split(':');
-    const d = new Date(`${dateStr}T00:00:00`);
-    d.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    return d;
-}
-// @ts-ignore
-function getDateName(dateStr) {
-    const dateObj = new Date(`${dateStr}T00:00:00`)
 
-    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' })
-    return dayName;
-}
-/**
- * 
- * @param {Date} dateObj 
- * @returns
- */
-function formatHHMM(dateObj) {
-    const h = String(dateObj.getHours()).padStart(2, '0');
-    const m = String(dateObj.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
-}
 
 module.exports = {
     getSlots,
