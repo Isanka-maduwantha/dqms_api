@@ -1,34 +1,36 @@
 const express = require('express');
-const env = require('./config/env')
-const app = express()
-const authRoutes = require('./routes/auth')
-const appointmentRoutes = require('./routes/appointmentRoutes')
+const env = require('./config/env');
+const app = express();
+const authRoutes = require('./routes/auth');
+const appointmentRoutes = require('./routes/appointmentRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes');
 const patientRoutes = require('./routes/patientRoutes');
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
 const dns = require('node:dns');
+
 dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudflare DNS
 
 dbConnection();
+
 app.use(cors({
   origin: 'http://localhost:5173',
-  credentials: true // Enable this if sending cookies/session tokens
+  credentials: true 
 }));
 
 app.use(express.json());
-// connectDB()
-// app.use('api/register')
-app.use('/api/auth', authRoutes)
-app.use('/api/appointments',appointmentRoutes);
+
+// Application Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/appointments', appointmentRoutes);
 app.use('/api/receptionist', receptionistRoutes);
 app.use('/api/patient', patientRoutes);
-// app.use('/user/admin', require('./routes/adminRoutes'));
-// app.use('/author', require('./routes/authorRouter'));
+
 app.get('/', (req, res) => {
-    res.send(`You Are On PORT ${PORT}`)
-})
+    res.send(`You Are On PORT ${PORT}`);
+});
+
 app.listen(PORT, () => {
-    console.log(`Server is Listening on PORT : ${PORT}`)
-})
+    console.log(`Server is Listening on PORT : ${PORT}`);
+});
