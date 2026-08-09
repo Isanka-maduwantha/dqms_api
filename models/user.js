@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema(
             type: String,
             enum: ['patient', 'admin', 'dentist','receptionist'],
             default: 'patient',
+        },
+        // F-6.4: shown on the Patient Medical History Timeline (allergies, diabetes, high blood pressure, etc.)
+        medicalAlerts: {
+            type: [String],
+            default: [],
         }
 
     },

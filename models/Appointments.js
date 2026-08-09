@@ -7,7 +7,8 @@ const AppointmentSchema = new mongoose.Schema({
   startTime: { type: String, required: true },       // '09:15'
   endTime: { type: String, required: true },         // '09:30'
   type: {type: String, enum: ['CHECKUP','NEW_PATIENT','EMERGENCY','OTHER'], default: 'OTHER'},
-  status: { type: String, enum: ['BOOKED', 'CANCELLED', 'COMPLETED'], default: 'BOOKED' }
+  // IN_PROGRESS: set by F-6.1 Call Next Patient Trigger while the dentist is seeing the patient
+  status: { type: String, enum: ['BOOKED', 'CANCELLED', 'COMPLETED', 'IN_PROGRESS'], default: 'BOOKED' }
 });
 
 module.exports = mongoose.model('Appointment', AppointmentSchema);
