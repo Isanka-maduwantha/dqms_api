@@ -1,38 +1,13 @@
-// @ts-check
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
-const userSchema = new mongoose.Schema(
-    {
-        name: {
-            type: String,
-            required: [true, "Name is required"],
-        },
-        nic: {
-            type: Number,
-            required: [true, "NIC is required"]
-        },
-        phone : {
-            type: String,
-            required : false
-        },
-        email: {
-            type: String,
-            required: [true, "Email is required"],
-            unique: true,
-            lowercase: true,
-        },
-        passwordHash: {
-            type: String,
-            required: true,
-        },
-        role: {
-            type: String,
-            enum: ['patient', 'admin', 'dentist','receptionist'],
-            default: 'patient',
-        }
+const AppointmentSchema = new mongoose.Schema({
+  patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  appointmentDate: { type: String, required: true }, // 'YYYY-MM-DD'
+  startTime: { type: String, required: true },       // '09:15'
+  endTime: { type: String, required: true },         // '09:30'
+  type: {type: String, enum: ['CHECKUP','ARRIVED','NEW_PATIENT','EMERGENCY','OTHER'], default: 'CHECKUP'},
+  status: { type: String, enum: ['BOOKED', 'CANCELLED', 'COMPLETED', 'IN_PROGRESS'], default: 'BOOKED' }
+});
 
-    },
-    { timestamps: true}
-)
-const User = mongoose.model('User', userSchema);
-module.exports = User;
+module.exports = mongoose.model('Appointment', AppointmentSchema);
