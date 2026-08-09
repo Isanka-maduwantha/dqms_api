@@ -81,20 +81,23 @@ async function getSlots(req, res) {
 async function bookAppointment(req, res) {
     try {
         const patientId = req.user.id;
+        const doctorId = "6a787768d07b93f80e198115";
         const {
+            // doctorId,
             appointmentDate,
             startTime,
             endTime,
         } = req.body;
-
+        // console.log("hello")
         await validateAppointmentSlot(appointmentDate,startTime);
         const appointment = {
+            doctorId,
             patientId,
             appointmentDate,
             startTime,
             endTime,
         };
-        // console.log(appointment);
+        console.log(appointment);
         const newAppointment = await Appointments.create(appointment);
 
         return res.status(201).json({
