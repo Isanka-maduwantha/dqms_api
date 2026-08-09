@@ -7,7 +7,7 @@ const AppointmentSchema = new mongoose.Schema({
   startTime: { type: String, required: true },       // '09:15'
   endTime: { type: String, required: true },         // '09:30'
   type: {type: String, enum: ['CHECKUP','ARRIVED','NEW_PATIENT','EMERGENCY','OTHER'], default: 'CHECKUP'},
-  status: { type: String, enum: ['BOOKED', 'CANCELLED', 'COMPLETED'], default: 'BOOKED' }
+  status: { type: String, enum: ['BOOKED', 'CANCELLED', 'COMPLETED', 'IN_PROGRESS'], default: 'BOOKED' }
 });
 
 module.exports = mongoose.model('Appointment', AppointmentSchema);
