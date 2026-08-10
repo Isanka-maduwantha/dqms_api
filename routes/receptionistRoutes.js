@@ -14,6 +14,11 @@ router.get(
   receptionistController.getAllPatients
 );
 
+router.get(
+  '/patients/search',
+  receptionistController.searchPatients
+);
+
 router.post(
   '/patient',
   receptionistController.addPatient
