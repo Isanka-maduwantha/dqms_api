@@ -1,5 +1,3 @@
-
-
 const WorkingHours = require('../models/WorkingHours');
 const DoctorLeave = require('../models/DoctorLeave');
 const Appointments = require('../models/Appointments');
@@ -11,30 +9,45 @@ async function getSlots(req, res) {
     try {
         const { date } = req.query;
 
-        if (!date) return res.status(400).json({ error: "Date is required" });
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+            return res.status(400).json({
+                success: false,
+                error: 'A valid appointment date (YYYY-MM-DD) is required.',
+            });
+        }
 
-        const dateObj = new Date(`${date}T00:00:00`)
+        const dateObj = new Date(`${date}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid appointment date.',
+            });
+        }
 
-        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' })
-
+        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
         const schedule = await WorkingHours.findOne({ dayOfWeek: dayName });
 
         if (!schedule) {
-            return res.json({ slots: [], message: `Clinic Closed on ${dayName} ` });
+            return res.status(200).json({
+                success: true,
+                date,
+                slots: [],
+                message: `Clinic is closed on ${dayName}.`,
+            });
         }
-        console.log(schedule)
-        const bookedAppointment = await Appointments.find({
+
+        const bookedAppointments = await Appointments.find({
             appointmentDate: date,
-            status: "BOOKED"
-        });
-        // 
-        const leaves = await DoctorLeave.find({ leaveDate: date })
-        const bookedSet = new Set(bookedAppointment.map(a => a.startTime));
+            status: { $in: ['BOOKED', 'ARRIVED'] },
+        }).select('startTime');
 
-        const { startTime, endTime, slotDurationMinutes } = schedule;
+        const bookedSet = new Set(
+            bookedAppointments.map((appointment) => appointment.startTime),
+        );
 
+        const leaves = await DoctorLeave.find({ leaveDate: date });
+        const { startTime, endTime, slotDurationMinutes = 15 } = schedule;
         const slots = [];
-
         let current = parseTimeToDate(date, startTime);
         const end = parseTimeToDate(date, endTime);
         const now = new Date();
@@ -42,37 +55,38 @@ async function getSlots(req, res) {
         while (current < end) {
             const timeStr = formatHHMM(current);
             const isPast = current < now;
-
-            // Check if slot is booked
             const isBooked = bookedSet.has(timeStr);
 
-            // Check if doctor is on leave during this slot
-            const isOnLeave = leaves.some(leave => {
-                // @ts-ignore
-                if (!leave.startTime) return true; // Full day leave
-                // @ts-ignore
-                const lStart = parseTimeToDate(date, leave.startTime);
-                // @ts-ignore
-                const lEnd = parseTimeToDate(date, leave.endTime);
-                return current >= lStart && current < lEnd;
+            const isOnLeave = leaves.some((leave) => {
+                if (!leave.startTime || !leave.endTime) return true;
+                const leaveStart = parseTimeToDate(date, leave.startTime);
+                const leaveEnd = parseTimeToDate(date, leave.endTime);
+                return current >= leaveStart && current < leaveEnd;
             });
-            const isAvailable = !isBooked && !isOnLeave && !isPast;
 
+            const available = !isBooked && !isOnLeave && !isPast;
             slots.push({
                 time: timeStr,
-                available: isAvailable,
-                reason: isBooked ? 'Booked' : isOnLeave ? 'Doctor Unavailable' : isPast ? 'Past Time' : 'Available'
+                available,
+                reason: isBooked
+                    ? 'Booked'
+                    : isOnLeave
+                      ? 'Doctor Unavailable'
+                      : isPast
+                        ? 'Past Time'
+                        : 'Available',
             });
 
-            // Advance by slot duration (15 mins)
-            current = new Date(current.getTime() + slotDurationMinutes * 60000);
-
+            current = new Date(current.getTime() + Number(slotDurationMinutes) * 60000);
         }
 
-        return res.json({ date, slots });
-    } catch (err) {
-        console.error('Error fetching slots:', err);
-        return res.status(500).json({ error: 'Server error' });
+        return res.status(200).json({ success: true, date, slots });
+    } catch (error) {
+        console.error('Error fetching appointment slots:', error);
+        return res.status(500).json({
+            success: false,
+            error: error instanceof Error ? error.message : 'Server error',
+        });
     }
 }
 
@@ -81,20 +95,27 @@ async function getSlots(req, res) {
 async function bookAppointment(req, res) {
     try {
         const patientId = req.user.id;
+        const doctorId = "6a787768d07b93f80e198115";
         const {
+            // doctorId,
             appointmentDate,
             startTime,
             endTime,
+            type,
+            visitPurpose,
         } = req.body;
-
+        // console.log("hello")
         await validateAppointmentSlot(appointmentDate,startTime);
         const appointment = {
+            doctorId,
             patientId,
             appointmentDate,
             startTime,
             endTime,
+            type: type || 'CHECKUP',
+            visitPurpose: visitPurpose || 'NEW_TREATMENT',
         };
-        // console.log(appointment);
+        console.log(appointment);
         const newAppointment = await Appointments.create(appointment);
 
         return res.status(201).json({
