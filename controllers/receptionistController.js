@@ -15,42 +15,6 @@ const {
 /**
  * Get all registered patients.
  */
-/**
- * Search existing patient accounts for Scenario 3.
- * Searches by patient name or Gmail/email address.
- */
-exports.searchPatients = async (req, res) => {
-  try {
-    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-
-    if (!query) {
-      return res.status(200).json({ success: true, data: [] });
-    }
-
-    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    const patients = await User.find({
-      role: 'patient',
-      $or: [
-        { name: { $regex: escapedQuery, $options: 'i' } },
-        { email: { $regex: escapedQuery, $options: 'i' } },
-      ],
-    })
-      .select('_id name phone email nic role')
-      .sort({ name: 1 })
-      .limit(20)
-      .lean();
-
-    return res.status(200).json({ success: true, data: patients });
-  } catch (error) {
-    console.error('Patient search error:', error);
-    return res.status(500).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to search patients',
-    });
-  }
-};
-
 exports.getAllPatients = async (req, res) => {
   try {
     const patients = await User.find({
@@ -144,82 +108,7 @@ exports.getQueue = async (req, res) => {
           tokenNumber: 1
         });
 
-    if (!appointmentId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Appointment ID is required'
-      });
-    }
-
-    const appointment =
-      await Appointments.findById(
-        appointmentId
-      ).populate(
-        'patientId',
-        'name phone email nic age gender address'
-      );
-
-    if (!appointment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Appointment not found'
-      });
-    }
-
-    if (appointment.status === 'ARRIVED') {
-      return res.status(200).json({
-        success: true,
-        message:
-          'Patient has already been checked in.',
-        appointment,
-        tokenNumber:
-          appointment.tokenNumber
-      });
-    }
-
-    if (appointment.status !== 'BOOKED') {
-      return res.status(400).json({
-        success: false,
-        message:
-          `Appointment cannot be checked in because its current status is ${appointment.status}.`
-      });
-    }
-
-    const lastTokenAppointment =
-      await Appointments.findOne({
-        appointmentDate:
-          appointment.appointmentDate,
-        tokenNumber: {
-          $ne: null
-        }
-      })
-        .sort({
-          tokenNumber: -1
-        })
-        .select('tokenNumber');
-
-    const nextTokenNumber =
-      lastTokenAppointment &&
-      typeof lastTokenAppointment.tokenNumber ===
-        'number'
-        ? lastTokenAppointment.tokenNumber + 1
-        : 1;
-
-    appointment.status = 'ARRIVED';
-    appointment.tokenNumber =
-      nextTokenNumber;
-
-    await appointment.save();
-
-    const updatedAppointment =
-      await Appointments.findById(
-        appointment._id
-      ).populate(
-        'patientId',
-        'name phone email nic age gender address'
-      );
-
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       data: queue
     });
@@ -357,73 +246,147 @@ exports.markArrived = async (req, res) => {
  * Make an appointment for an EXISTING patient account
  * from the receptionist dashboard.
  */
-exports.bookAppointmentForPatient = async (req, res) => {
-  try {
-    const { patientId, appointmentDate, startTime, type, visitPurpose } = req.body;
+exports.bookAppointmentForPatient =
+  async (req, res) => {
+    try {
+      const {
+        patientId,
+        appointmentDate,
+        startTime
+      } = req.body;
 
-    if (!patientId || !appointmentDate || !startTime) {
-      return res.status(400).json({
+      if (
+        !patientId ||
+        !appointmentDate ||
+        !startTime
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Patient ID, appointment date and start time are required.'
+        });
+      }
+
+      const patient =
+        await User.findOne({
+          _id: patientId,
+          role: 'patient'
+        }).select(
+          'name phone email nic age gender address role'
+        );
+
+      if (!patient) {
+        return res.status(404).json({
+          success: false,
+          message:
+            'Patient account not found.'
+        });
+      }
+
+      await validateAppointmentSlot(
+        appointmentDate,
+        startTime
+      );
+
+      const dateObject =
+        new Date(
+          `${appointmentDate}T00:00:00`
+        );
+
+      const dayName =
+        dateObject.toLocaleDateString(
+          'en-US',
+          {
+            weekday: 'long'
+          }
+        );
+
+      const schedule =
+        await WorkingHours.findOne({
+          dayOfWeek: dayName
+        });
+
+      if (!schedule) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `Clinic is closed on ${dayName}.`
+        });
+      }
+
+      const slotDuration =
+        schedule.slotDurationMinutes ||
+        15;
+
+      const startDateTime =
+        parseTimeToDate(
+          appointmentDate,
+          startTime
+        );
+
+      const endDateTime =
+        new Date(
+          startDateTime.getTime() +
+          slotDuration * 60000
+        );
+
+      const endTime =
+        formatHHMM(endDateTime);
+
+      const appointment =
+        await Appointments.create({
+          patientId:
+            patient._id,
+
+          appointmentDate,
+
+          startTime,
+
+          endTime,
+
+          status: 'BOOKED',
+
+          tokenNumber: null
+        });
+
+      const populatedAppointment =
+        await Appointments.findById(
+          appointment._id
+        ).populate(
+          'patientId',
+          'name phone email nic age gender address'
+        );
+
+      return res.status(201).json({
+        success: true,
+        message:
+          'Appointment reserved successfully.',
+        appointment:
+          populatedAppointment
+      });
+    } catch (error) {
+      console.error(
+        'Receptionist appointment booking error:',
+        error
+      );
+
+      const statusCode =
+        error &&
+        typeof error === 'object' &&
+        'statusCode' in error &&
+        typeof error.statusCode === 'number'
+          ? error.statusCode
+          : 500;
+
+      return res.status(statusCode).json({
         success: false,
-        message: 'Patient ID, appointment date and start time are required.',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to create appointment.'
       });
     }
-
-    const patient = await User.findOne({ _id: patientId, role: 'patient' })
-      .select('name phone email nic age gender address role')
-      .lean();
-
-    if (!patient) {
-      return res.status(404).json({ success: false, message: 'Patient account not found.' });
-    }
-
-    await validateAppointmentSlot(appointmentDate, startTime);
-
-    const dateObject = new Date(`${appointmentDate}T00:00:00`);
-    const dayName = dateObject.toLocaleDateString('en-US', { weekday: 'long' });
-    const schedule = await WorkingHours.findOne({ dayOfWeek: dayName });
-
-    if (!schedule) {
-      return res.status(400).json({ success: false, message: `Clinic is closed on ${dayName}.` });
-    }
-
-    const slotDuration = Number(schedule.slotDurationMinutes || 15);
-    const startDateTime = parseTimeToDate(appointmentDate, startTime);
-    const endDateTime = new Date(startDateTime.getTime() + slotDuration * 60000);
-    const endTime = formatHHMM(endDateTime);
-
-    const appointment = await Appointments.create({
-      patientId: patient._id,
-      appointmentDate,
-      startTime,
-      endTime,
-      type: type || 'CHECKUP',
-      visitPurpose: visitPurpose || 'NEW_TREATMENT',
-      status: 'BOOKED',
-      tokenNumber: null,
-    });
-
-    const populatedAppointment = await Appointments.findById(appointment._id)
-      .populate('patientId', 'name phone email nic age gender address');
-
-    return res.status(201).json({
-      success: true,
-      message: 'Appointment reserved successfully.',
-      appointment: populatedAppointment,
-    });
-  } catch (error) {
-    console.error('Receptionist appointment booking error:', error);
-
-    const statusCode =
-      error && typeof error === 'object' && 'statusCode' in error && typeof error.statusCode === 'number'
-        ? error.statusCode
-        : 500;
-
-    return res.status(statusCode).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to create appointment.',
-    });
-  }
-};
+  };
 
 /**
  * Generate a token for a walk-in patient.

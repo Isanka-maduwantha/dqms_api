@@ -1,591 +1,242 @@
-const mongoose = require('mongoose');
-const { getPatientBilling, recordPayment } = require('./billingService');
-const User = require('../models/user');
+// controllers/billingController.js — Module 7: Billing & Financial Management
 const Invoice = require('../models/Invoice');
-const DentalChart = require('../models/DentalChart');
+const Payment = require('../models/Payment');
+const Installment = require('../models/Installment');
+const { generateInvoiceReceiptPdf } = require('../helpers/generateInvoiceReceiptPdf');
 
-exports.getPatientBilling = async (req, res) => {
-  try {
-    const { patientId } = req.params;
+// F-7.1: Invoice & Receipt Generator
+// @ts-ignore
+exports.createInvoice = async (req, res) => {
+    try {
+        const { patientId, appointmentId, treatmentRecordId, items, taxRate, discount } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(patientId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid patient ID.',
-      });
+        if (!patientId || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ success: false, message: 'patientId and at least one item are required' });
+        }
+
+        const normalizedItems = items.map(item => ({
+            description: item.description,
+            quantity: item.quantity || 1,
+            unitPrice: item.unitPrice,
+            amount: (item.quantity || 1) * item.unitPrice
+        }));
+
+        const subtotal = normalizedItems.reduce((sum, item) => sum + item.amount, 0);
+        const rate = taxRate || 0;
+        const taxAmount = +(subtotal * (rate / 100)).toFixed(2);
+        const discountAmount = discount || 0;
+        const totalAmount = +(subtotal + taxAmount - discountAmount).toFixed(2);
+
+        const invoice = await Invoice.create({
+            patientId,
+            appointmentId,
+            treatmentRecordId,
+            items: normalizedItems,
+            subtotal,
+            taxRate: rate,
+            taxAmount,
+            discount: discountAmount,
+            totalAmount,
+            amountPaid: 0,
+            balanceDue: totalAmount
+        });
+
+        res.status(201).json({ success: true, message: 'Invoice generated', invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    const patient = await User.findOne({
-      _id: patientId,
-      role: 'patient',
-    }).select('_id name phone email nic').lean();
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message: 'Patient not found.',
-      });
-    }
-
-    const billing = await getPatientBilling(patientId);
-
-    return res.status(200).json({
-      success: true,
-      patient,
-      ...billing,
-    });
-  } catch (error) {
-    console.error('Get patient billing error:', error);
-    return res.status(500).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to retrieve patient billing.',
-    });
-  }
 };
 
+// @ts-ignore
 exports.getInvoice = async (req, res) => {
-  try {
-    const { invoiceId } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(invoiceId)) {
-      return res.status(400).json({ success: false, message: 'Invalid invoice ID.' });
+    try {
+        const invoice = await Invoice.findById(req.params.id);
+        if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+        res.status(200).json({ success: true, invoice });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    const invoice = await Invoice.findById(invoiceId)
-      .populate('patientId', 'name phone email nic')
-      .populate('appointmentId', 'appointmentDate startTime endTime status visitPurpose')
-      .lean();
-
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: 'Invoice not found.' });
-    }
-
-    return res.status(200).json({ success: true, invoice });
-  } catch (error) {
-    console.error('Get invoice error:', error);
-    return res.status(500).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to retrieve invoice.',
-    });
-  }
 };
 
-exports.recordPayment = async (req, res) => {
-  try {
-    const receivedBy = req.user?.id;
-    const { patientId, invoiceId } = req.params;
-    const { amount, method = 'CASH', notes = '' } = req.body || {};
-
-    if (!receivedBy) {
-      return res.status(401).json({ success: false, message: 'Authenticated receptionist information is missing.' });
+// @ts-ignore
+exports.listPatientInvoices = async (req, res) => {
+    try {
+        const invoices = await Invoice.find({ patientId: req.params.patientId }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, count: invoices.length, invoices });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    if (!mongoose.Types.ObjectId.isValid(patientId) || !mongoose.Types.ObjectId.isValid(invoiceId)) {
-      return res.status(400).json({ success: false, message: 'Invalid patient or invoice ID.' });
-    }
-
-    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Payment amount must be a number greater than 0.' });
-    }
-
-    const normalizedMethod = String(method).trim().toUpperCase();
-    const allowedMethods = ['CASH', 'CARD', 'BANK_TRANSFER', 'ONLINE', 'OTHER'];
-
-    if (!allowedMethods.includes(normalizedMethod)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment method must be CASH, CARD, BANK_TRANSFER, ONLINE or OTHER.',
-      });
-    }
-
-    const result = await recordPayment({
-      invoiceId,
-      patientId,
-      amount,
-      method: normalizedMethod,
-      notes,
-      receivedBy,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: result.invoice.status === 'PAID'
-        ? 'Payment recorded. Invoice is fully paid.'
-        : 'Payment recorded successfully.',
-      payment: result.payment,
-      invoice: result.invoice,
-    });
-  } catch (error) {
-    console.error('Record payment error:', error);
-    const statusCode = error?.statusCode || 500;
-    return res.status(statusCode).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to record payment.',
-    });
-  }
 };
 
+// F-7.1 (cont.): downloadable PDF receipt
+// @ts-ignore
+exports.downloadReceipt = async (req, res) => {
+    try {
+        const invoice = await Invoice.findById(req.params.id);
+        if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
-/**
- * ==========================================================
- * GET PATIENT BILLING
- * ==========================================================
- *
- * GET /api/receptionist/patients/:patientId/billing
- *
- * Returns:
- * - Patient
- * - Invoices
- * - Payments
- * - Billing totals
- *
- * ==========================================================
- */
-exports.getPatientBilling = async (
-  req,
-  res,
-) => {
-  try {
-    const { patientId } =
-      req.params;
+        const receipt = await generateInvoiceReceiptPdf(invoice);
+        if (!receipt) throw new Error('Failed to generate receipt PDF');
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        patientId,
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Invalid patient ID.',
-      });
+        res.setHeader('Content-Type', receipt.contentType);
+        res.setHeader(receipt.setHeader, receipt.attachment);
+        res.send(receipt.pdf);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    const patient =
-      await User.findOne({
-        _id: patientId,
-        role: 'patient',
-      })
-        .select(
-          '_id name phone email nic',
-        )
-        .lean();
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Patient not found.',
-      });
-    }
-
-    const billing =
-      await getPatientBilling(
-        patientId,
-      );
-
-    return res.status(200).json({
-      success: true,
-      patient,
-      ...billing,
-    });
-  } catch (error) {
-    console.error(
-      'Get patient billing error:',
-      error,
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to retrieve patient billing.',
-    });
-  }
 };
 
+// Shared helper: applies a successful payment to an invoice's paid/balance/status fields
+async function applyPaymentToInvoice(invoice, amount) {
+    invoice.amountPaid = +(invoice.amountPaid + amount).toFixed(2);
+    invoice.balanceDue = Math.max(0, +(invoice.totalAmount - invoice.amountPaid).toFixed(2));
+    invoice.status = invoice.balanceDue === 0 ? 'PAID' : 'PARTIALLY_PAID';
+    await invoice.save();
+}
 
-/**
- * ==========================================================
- * GET PATIENT OVERVIEW
- * ==========================================================
- *
- * GET /api/receptionist/patients/:patientId/overview
- *
- * This is the main receptionist patient screen.
- *
- * Returns:
- *
- * PATIENT
- * -------
- * - name
- * - NIC
- * - phone
- * - email
- *
- * TREATMENT HISTORY
- * -----------------
- * - treatment name
- * - treatment price
- * - treatment date
- * - follow-up date
- * - diagnosis
- * - treatment details
- * - notes
- * - dentist
- * - materials used
- *
- * BILLING
- * -------
- * - invoices
- * - invoice totals
- * - payments
- * - outstanding balances
- *
- * IMPORTANT:
- * Treatment price is the price stored in the treatment
- * record. Inventory prices are NOT used here.
- *
- * ==========================================================
- */
-exports.getPatientOverview = async (
-  req,
-  res,
-) => {
-  try {
-    const { patientId } =
-      req.params;
+// F-7.2: Instalment Ledger Tracker — split an invoice into a partial-payment schedule
+// @ts-ignore
+exports.createInstallmentPlan = async (req, res) => {
+    try {
+        const { invoiceId, numberOfInstallments, startDate } = req.body;
+        if (!invoiceId || !numberOfInstallments || numberOfInstallments < 2) {
+            return res.status(400).json({ success: false, message: 'invoiceId and numberOfInstallments (>=2) are required' });
+        }
 
-    /**
-     * ========================================================
-     * VALIDATE PATIENT ID
-     * ========================================================
-     */
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        patientId,
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Invalid patient ID.',
-      });
+        const invoice = await Invoice.findById(invoiceId);
+        if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+        const existingPlan = await Installment.findOne({ invoiceId });
+        if (existingPlan) {
+            return res.status(400).json({ success: false, message: 'An installment plan already exists for this invoice' });
+        }
+
+        const installmentAmount = +(invoice.balanceDue / numberOfInstallments).toFixed(2);
+        const base = startDate ? new Date(startDate) : new Date();
+
+        const schedule = Array.from({ length: numberOfInstallments }, (_, i) => {
+            const due = new Date(base);
+            due.setMonth(due.getMonth() + i); // one installment per month
+            return {
+                installmentNumber: i + 1,
+                dueAmount: installmentAmount,
+                dueDate: due.toISOString().slice(0, 10),
+                status: 'PENDING'
+            };
+        });
+
+        const plan = await Installment.create({
+            invoiceId,
+            patientId: invoice.patientId,
+            totalAmount: invoice.balanceDue,
+            numberOfInstallments,
+            schedule,
+            outstandingBalance: invoice.balanceDue
+        });
+
+        res.status(201).json({ success: true, message: 'Installment plan created', plan });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    /**
-     * ========================================================
-     * GET PATIENT
-     * ========================================================
-     */
-    const patient =
-      await User.findOne({
-        _id: patientId,
-        role: 'patient',
-      })
-        .select(
-          '_id name phone email nic',
-        )
-        .lean();
-
-    if (!patient) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Patient not found.',
-      });
-    }
-
-    /**
-     * ========================================================
-     * GET DENTAL CHART / TREATMENT HISTORY
-     * ========================================================
-     *
-     * Populate:
-     *
-     * - dentist
-     * - appointment
-     */
-    const dentalChart =
-      await DentalChart.findOne({
-        patientId:
-          patient._id,
-      })
-        .populate(
-          'treatmentRecords.dentistId',
-          'name email role',
-        )
-        .populate(
-          'treatmentRecords.appointmentId',
-          'appointmentDate startTime endTime type visitPurpose status tokenNumber',
-        )
-        .lean();
-
-    const treatmentRecords =
-      dentalChart?.treatmentRecords ||
-      [];
-
-    /**
-     * ========================================================
-     * GET BILLING
-     * ========================================================
-     *
-     * Reuse the existing billing service.
-     *
-     * This already returns:
-     *
-     * - invoices
-     * - payments
-     * - totals
-     */
-    const billing =
-      await getPatientBilling(
-        patientId,
-      );
-
-    /**
-     * ========================================================
-     * RESPONSE
-     * ========================================================
-     */
-    return res.status(200).json({
-      success: true,
-
-      patient: {
-        id: patient._id,
-        name: patient.name,
-        phone: patient.phone,
-        email: patient.email,
-        nic: patient.nic,
-      },
-
-      treatmentHistory: {
-        dentalChartId:
-          dentalChart?._id ||
-          null,
-
-        count:
-          treatmentRecords.length,
-
-        records:
-          treatmentRecords,
-      },
-
-      billing: {
-        invoices:
-          billing.invoices,
-
-        totals:
-          billing.totals,
-      },
-    });
-  } catch (error) {
-    console.error(
-      'Get patient overview error:',
-      error,
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to retrieve patient overview.',
-    });
-  }
 };
 
+// F-7.2 (cont.): record a payment against the next pending installment
+// @ts-ignore
+exports.payInstallment = async (req, res) => {
+    try {
+        const { id } = req.params; // installment plan id
+        const { installmentNumber, method } = req.body;
 
-/**
- * ==========================================================
- * GET SINGLE INVOICE
- * ==========================================================
- */
-exports.getInvoice = async (
-  req,
-  res,
-) => {
-  try {
-    const { invoiceId } =
-      req.params;
+        const plan = await Installment.findById(id);
+        if (!plan) return res.status(404).json({ success: false, message: 'Installment plan not found' });
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        invoiceId,
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Invalid invoice ID.',
-      });
+        const entry = installmentNumber
+            ? plan.schedule.find(e => e.installmentNumber === installmentNumber)
+            : plan.schedule.find(e => e.status === 'PENDING');
+
+        if (!entry) return res.status(400).json({ success: false, message: 'No matching pending installment found' });
+        if (entry.status === 'PAID') return res.status(400).json({ success: false, message: 'This installment is already paid' });
+
+        const payment = await Payment.create({
+            invoiceId: plan.invoiceId,
+            patientId: plan.patientId,
+            amount: entry.dueAmount,
+            method: method || 'CASH',
+            status: 'SUCCESS'
+        });
+
+        entry.status = 'PAID';
+        entry.paidDate = new Date();
+        entry.paymentId = payment._id;
+        plan.outstandingBalance = Math.max(0, +(plan.outstandingBalance - entry.dueAmount).toFixed(2));
+        await plan.save();
+
+        const invoice = await Invoice.findById(plan.invoiceId);
+        if (invoice) await applyPaymentToInvoice(invoice, entry.dueAmount);
+
+        res.status(200).json({ success: true, message: `Installment #${entry.installmentNumber} paid`, plan, payment });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    const invoice =
-      await Invoice.findById(
-        invoiceId,
-      )
-        .populate(
-          'patientId',
-          'name phone email nic',
-        )
-        .populate(
-          'appointmentId',
-          'appointmentDate startTime endTime status visitPurpose',
-        )
-        .lean();
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Invoice not found.',
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      invoice,
-    });
-  } catch (error) {
-    console.error(
-      'Get invoice error:',
-      error,
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to retrieve invoice.',
-    });
-  }
 };
 
-
-/**
- * ==========================================================
- * RECORD PAYMENT
- * ==========================================================
- */
-exports.recordPayment = async (
-  req,
-  res,
-) => {
-  try {
-    const receivedBy =
-      req.user?.id;
-
-    const {
-      patientId,
-      invoiceId,
-    } = req.params;
-
-    const {
-      amount,
-      method = 'CASH',
-      notes = '',
-    } = req.body || {};
-
-    if (!receivedBy) {
-      return res.status(401).json({
-        success: false,
-        message:
-          'Authenticated receptionist information is missing.',
-      });
+// F-7.2 (cont.): ledger view — plan + outstanding balance
+// @ts-ignore
+exports.getLedger = async (req, res) => {
+    try {
+        const plan = await Installment.findOne({ invoiceId: req.params.invoiceId });
+        if (!plan) return res.status(404).json({ success: false, message: 'No installment plan for this invoice' });
+        res.status(200).json({ success: true, plan });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
+};
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        patientId,
-      ) ||
-      !mongoose.Types.ObjectId.isValid(
-        invoiceId,
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Invalid patient or invoice ID.',
-      });
+// F-7.3: Payment Gateway Integration (Extra)
+// NOTE: This is a mocked gateway adapter so the rest of the billing flow (invoice status,
+// receipts) can be built/demoed end-to-end. Swap the body of this function for a real
+// provider SDK call (e.g. Stripe PaymentIntents, PayHere) — the request/response contract
+// below is written so that swap doesn't need to touch any other module.
+// @ts-ignore
+exports.processGatewayPayment = async (req, res) => {
+    try {
+        const { invoiceId, amount, method } = req.body; // method: 'CARD' | 'QR'
+        if (!invoiceId || !amount || amount <= 0) {
+            return res.status(400).json({ success: false, message: 'invoiceId and a positive amount are required' });
+        }
+        if (!['CARD', 'QR'].includes(method)) {
+            return res.status(400).json({ success: false, message: "method must be 'CARD' or 'QR'" });
+        }
+
+        const invoice = await Invoice.findById(invoiceId);
+        if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+        if (amount > invoice.balanceDue) {
+            return res.status(400).json({ success: false, message: 'Amount exceeds the outstanding balance' });
+        }
+
+        // --- mock gateway call ---
+        const transactionRef = `TXN-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+        const gatewaySucceeded = true; // a real integration would branch on the provider's response
+        // -------------------------
+
+        const payment = await Payment.create({
+            invoiceId,
+            patientId: invoice.patientId,
+            amount,
+            method: 'GATEWAY',
+            status: gatewaySucceeded ? 'SUCCESS' : 'FAILED',
+            transactionRef
+        });
+
+        if (gatewaySucceeded) await applyPaymentToInvoice(invoice, amount);
+
+        res.status(gatewaySucceeded ? 200 : 402).json({
+            success: gatewaySucceeded,
+            message: gatewaySucceeded ? 'Payment successful' : 'Payment declined',
+            payment,
+            invoice
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
-
-    if (
-      typeof amount !== 'number' ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Payment amount must be a number greater than 0.',
-      });
-    }
-
-    const normalizedMethod =
-      String(method)
-        .trim()
-        .toUpperCase();
-
-    const allowedMethods = [
-      'CASH',
-      'CARD',
-      'BANK_TRANSFER',
-      'ONLINE',
-      'OTHER',
-    ];
-
-    if (
-      !allowedMethods.includes(
-        normalizedMethod,
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Payment method must be CASH, CARD, BANK_TRANSFER, ONLINE or OTHER.',
-      });
-    }
-
-    const result =
-      await recordPayment({
-        invoiceId,
-        patientId,
-        amount,
-        method:
-          normalizedMethod,
-        notes,
-        receivedBy,
-      });
-
-    return res.status(200).json({
-      success: true,
-      message:
-        'Payment recorded successfully.',
-      payment:
-        result.payment,
-      invoice:
-        result.invoice,
-    });
-  } catch (error) {
-    console.error(
-      'Record payment error:',
-      error,
-    );
-
-    const statusCode =
-      error?.statusCode || 500;
-
-    return res
-      .status(statusCode)
-      .json({
-        success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Failed to record payment.',
-      });
-  }
 };

@@ -1,162 +1,21 @@
+// routes/inventoryRoutes.js — Module 8: Inventory & Stock Management
 const express = require('express');
-
 const router = express.Router();
+const inventoryController = require('../controllers/inventoryController');
+const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-const {
-  authenticateToken,
-} = require('../middleware/auth');
+router.use(authenticateToken);
 
-const {
-  authorizeRole,
-} = require('../middleware/authorizeRole');
+// F-8.2: Low-Stock Warning Alert — dentist/receptionist can view, so put before the CRUD guard
+router.get('/items/low-stock', inventoryController.getLowStockItems);
 
-const inventoryController =
-  require('../controllers/inventoryController');
+// F-8.1/F-8.3: any authenticated staff can view stock; only admin manages it
+router.get('/items', inventoryController.getItems);
+router.get('/items/:id', inventoryController.getItemById);
 
-
-/**
- * ==========================================================
- * INVENTORY ROUTES
- * ==========================================================
- *
- * INVENTORY ACCESS:
- *
- * ADMIN
- * -----
- * - View inventory
- * - Add inventory items
- * - Edit inventory items
- * - Restock inventory
- * - Manually remove stock
- *
- * DENTIST
- * -------
- * - View inventory
- * - Cannot add/edit/restock inventory
- * - Treatment-based material deduction will be handled
- *   through the dentist treatment workflow.
- *
- * RECEPTIONIST
- * ------------
- * - No inventory access for now.
- *
- * ==========================================================
- */
-
-
-/**
- * ==========================================================
- * CREATE INVENTORY ITEM
- * ==========================================================
- *
- * ADMIN ONLY
- *
- * POST /api/inventory/items
- * ==========================================================
- */
-router.post(
-  '/items',
-  authenticateToken,
-  authorizeRole('admin'),
-  inventoryController.createInventoryItem
-);
-
-
-/**
- * ==========================================================
- * GET INVENTORY ITEMS
- * ==========================================================
- *
- * ADMIN + DENTIST
- *
- * GET /api/inventory/items
- *
- * Optional query parameters:
- *
- * ?category=ORTHODONTIC
- * ?search=bracket
- * ?lowStock=true
- * ?includeInactive=true
- * ==========================================================
- */
-router.get(
-  '/items',
-  authenticateToken,
-  authorizeRole('admin', 'dentist'),
-  inventoryController.getInventoryItems
-);
-
-
-/**
- * ==========================================================
- * GET SINGLE INVENTORY ITEM
- * ==========================================================
- *
- * ADMIN + DENTIST
- *
- * GET /api/inventory/items/:itemId
- * ==========================================================
- */
-router.get(
-  '/items/:itemId',
-  authenticateToken,
-  authorizeRole('admin', 'dentist'),
-  inventoryController.getInventoryItem
-);
-
-
-/**
- * ==========================================================
- * UPDATE INVENTORY ITEM DETAILS
- * ==========================================================
- *
- * ADMIN ONLY
- *
- * PUT /api/inventory/items/:itemId
- * ==========================================================
- */
-router.put(
-  '/items/:itemId',
-  authenticateToken,
-  authorizeRole('admin'),
-  inventoryController.updateInventoryItem
-);
-
-
-/**
- * ==========================================================
- * UPDATE STOCK
- * ==========================================================
- *
- * ADMIN ONLY
- *
- * PATCH /api/inventory/items/:itemId/stock
- *
- * ADD:
- *
- * {
- *   "quantity": 50,
- *   "operation": "ADD"
- * }
- *
- * REMOVE:
- *
- * {
- *   "quantity": 5,
- *   "operation": "REMOVE"
- * }
- *
- * Dentist treatment deductions will NOT use this endpoint
- * directly. Those will be handled automatically by the
- * treatment workflow.
- * ==========================================================
- */
-router.patch(
-  '/items/:itemId/stock',
-  authenticateToken,
-  authorizeRole('admin'),
-  inventoryController.updateStock
-);
-
+router.post('/items', authorizeRoles('admin'), inventoryController.createItem);
+router.put('/items/:id', authorizeRoles('admin'), inventoryController.updateItem);
+router.delete('/items/:id', authorizeRoles('admin'), inventoryController.deleteItem);
+router.patch('/items/:id/restock', authorizeRoles('admin', 'receptionist'), inventoryController.restockItem);
 
 module.exports = router;

@@ -5,21 +5,6 @@ const router = express.Router();
 const receptionistController =
   require('../controllers/receptionistController');
 
-const billingController =
-  require('../controllers/billingController');
-
-const {
-  authenticateToken,
-} = require('../middleware/auth');
-
-const {
-  authorizeRole,
-} = require('../middleware/authorizeRole');
-
-// All receptionist routes require a valid JWT belonging to a
-// receptionist or admin account.
-router.use(authenticateToken, authorizeRole('receptionist', 'admin'));
-
 // ==========================================================
 // PATIENT MANAGEMENT
 // ==========================================================
@@ -27,11 +12,6 @@ router.use(authenticateToken, authorizeRole('receptionist', 'admin'));
 router.get(
   '/patients',
   receptionistController.getAllPatients
-);
-
-router.get(
-  '/patients/search',
-  receptionistController.searchPatients
 );
 
 router.post(
@@ -85,30 +65,6 @@ router.post(
 router.post(
   '/walk-in',
   receptionistController.generateWalkInToken
-);
-
-// ==========================================================
-// BILLING
-// ==========================================================
-
-router.get(
-  '/patients/:patientId/billing',
-  billingController.getPatientBilling
-);
-
-router.get(
-  '/patients/:patientId/overview',
-  billingController.getPatientOverview
-);
-
-router.get(
-  '/invoices/:invoiceId',
-  billingController.getInvoice
-);
-
-router.post(
-  '/patients/:patientId/invoices/:invoiceId/payments',
-  billingController.recordPayment
 );
 
 module.exports = router;
