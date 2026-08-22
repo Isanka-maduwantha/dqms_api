@@ -10,9 +10,13 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes');
 const patientRoutes = require('./routes/patientRoutes');
+const dentistRoutes = require('./routes/dentistRoutes');
+const billingRoutes = require('./routes/billingRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 const PORT = env.PORT || 3000;
 const cors = require('cors');
 const dbConnection = require('./config/db');
+const socket = require('./config/socket');
 const dns = require('node:dns');
 
 dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudflare DNS

@@ -17,3 +17,13 @@ exports.authenticateToken = (req,res,next) => {
         res.status(403).json({message: 'Invalid or expired token'});
     }
 }
+
+// Restricts a route to the given roles, e.g. authorizeRoles('dentist','admin')
+// Used by Modules 6/7/8 to gate dentist/admin-only actions.
+// @ts-ignore
+exports.authorizeRoles = (...roles) => (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+        return res.status(403).json({ message: 'You do not have permission to perform this action.' });
+    }
+    next();
+}

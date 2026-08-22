@@ -144,7 +144,82 @@ exports.getQueue = async (req, res) => {
           tokenNumber: 1
         });
 
-    res.status(200).json({
+    if (!appointmentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment ID is required'
+      });
+    }
+
+    const appointment =
+      await Appointments.findById(
+        appointmentId
+      ).populate(
+        'patientId',
+        'name phone email nic age gender address'
+      );
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+
+    if (appointment.status === 'ARRIVED') {
+      return res.status(200).json({
+        success: true,
+        message:
+          'Patient has already been checked in.',
+        appointment,
+        tokenNumber:
+          appointment.tokenNumber
+      });
+    }
+
+    if (appointment.status !== 'BOOKED') {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Appointment cannot be checked in because its current status is ${appointment.status}.`
+      });
+    }
+
+    const lastTokenAppointment =
+      await Appointments.findOne({
+        appointmentDate:
+          appointment.appointmentDate,
+        tokenNumber: {
+          $ne: null
+        }
+      })
+        .sort({
+          tokenNumber: -1
+        })
+        .select('tokenNumber');
+
+    const nextTokenNumber =
+      lastTokenAppointment &&
+      typeof lastTokenAppointment.tokenNumber ===
+        'number'
+        ? lastTokenAppointment.tokenNumber + 1
+        : 1;
+
+    appointment.status = 'ARRIVED';
+    appointment.tokenNumber =
+      nextTokenNumber;
+
+    await appointment.save();
+
+    const updatedAppointment =
+      await Appointments.findById(
+        appointment._id
+      ).populate(
+        'patientId',
+        'name phone email nic age gender address'
+      );
+
+    return res.status(200).json({
       success: true,
       data: queue
     });

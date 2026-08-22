@@ -46,6 +46,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Uploaded X-ray / document attachments (F-6.5)
+uploads/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
