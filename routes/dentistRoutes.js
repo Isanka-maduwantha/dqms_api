@@ -1,27 +1,139 @@
-// routes/dentistRoutes.js — Module 6: Dentist Surgery Console & Visual Chart
 const express = require('express');
+
 const router = express.Router();
-const dentistController = require('../controllers/dentistController');
-const { authenticateToken, authorizeRoles } = require('../middleware/auth');
-const { upload } = require('../helpers/upload');
 
-router.use(authenticateToken, authorizeRoles('dentist'));
+const {
+  authenticateToken,
+} = require('../middleware/auth');
 
-// F-6.1
-router.post('/call-next', dentistController.callNextPatient);
+const {
+  authorizeRole,
+} = require('../middleware/authorizeRole');
 
-// F-6.2
-router.get('/chart/:patientId', dentistController.getDentalChart);
-router.put('/chart/:patientId/tooth/:toothNumber', dentistController.updateTooth);
+const dentistController =
+  require('../controllers/dentistController');
 
-// F-6.3
-router.post('/treatment-records', dentistController.createTreatmentRecord);
-router.put('/treatment-records/:id', dentistController.updateTreatmentRecord);
 
-// F-6.4
-router.get('/history/:patientId', dentistController.getPatientHistory);
+/*
+ * ==========================================================
+ * DENTIST ROUTES
+ * ==========================================================
+ *
+ * All dentist routes require:
+ *
+ * 1. A valid JWT
+ * 2. The user role must be "dentist"
+ *
+ * ==========================================================
+ */
 
-// F-6.5 (Extra)
-router.post('/treatment-records/:id/attachments', upload.single('file'), dentistController.addAttachment);
+
+/**
+ * ==========================================================
+ * DENTIST SCENARIO 1
+ *
+ * Call the next patient from today's queue.
+ *
+ * POST /api/dentist/call-next
+ * ==========================================================
+ */
+router.post(
+  '/call-next',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.callNextPatient
+);
+
+
+/**
+ * ==========================================================
+ * DENTIST SCENARIO 2
+ *
+ * Search patients by:
+ *
+ * - Name
+ * - NIC
+ * - Email / Gmail
+ *
+ * GET /api/dentist/patients/search?q=...
+ * ==========================================================
+ */
+router.get(
+  '/patients/search',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.searchPatients
+);
+
+
+/**
+ * GET /api/dentist/treatment-types
+ * Returns the active clinic treatment/service catalogue.
+ */
+router.get(
+  '/treatment-types',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.getTreatmentTypes
+);
+
+
+/**
+ * ==========================================================
+ * DENTIST SCENARIO 2
+ *
+ * Get selected patient's dental history.
+ *
+ * GET /api/dentist/patients/:patientId/history
+ * ==========================================================
+ */
+router.get(
+  '/patients/:patientId/history',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.getPatientHistory
+);
+
+
+/**
+ * ==========================================================
+ * DENTIST SCENARIOS 3, 4 & 5
+ *
+ * Create/save a treatment record.
+ *
+ * POST /api/dentist/patients/:patientId/treatments
+ *
+ * Handles:
+ *
+ * - New patient dental chart
+ * - Existing patient dental chart
+ * - Treatment history
+ * - Follow-up date
+ * ==========================================================
+ */
+router.post(
+  '/patients/:patientId/treatments',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.createTreatmentRecord
+);
+
+
+/**
+ * ==========================================================
+ * DENTIST SCENARIO 6
+ *
+ * End the current treatment/session.
+ *
+ * POST /api/dentist/appointments/:appointmentId/end-treatment
+ * ==========================================================
+ */
+router.post(
+  '/appointments/:appointmentId/end-treatment',
+  authenticateToken,
+  authorizeRole('dentist'),
+  dentistController.endTreatment
+);
+
 
 module.exports = router;

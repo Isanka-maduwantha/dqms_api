@@ -50,6 +50,7 @@ exports.validateAppointmentSlot = async (appointmentDate, startTime) => {
     const appointment = await Appointments.findOne({
         appointmentDate,
         startTime,
+        status: { $in: ['BOOKED', 'ARRIVED'] },
     });
     if (appointment) {
         // @ts-ignore

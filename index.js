@@ -1,9 +1,12 @@
 const express = require('express');
-const http = require('http');
-const path = require('path');
 const env = require('./config/env');
 const app = express();
 const authRoutes = require('./routes/auth');
+const adminAuthRoutes = require('./routes/adminAuthRoutes');
+const adminNotificationRoutes = require('./routes/adminNotificationRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const dentistRoutes = require('./routes/dentistRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes');
 const patientRoutes = require('./routes/patientRoutes');
@@ -27,27 +30,21 @@ app.use(cors({
 
 app.use(express.json());
 
-// Static file storage for uploads
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
 // Application Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminAuthRoutes);
+app.use('/api/admin', adminNotificationRoutes);
+app.use('/api/admin/reports', reportRoutes);
+app.use('/api/dentist', dentistRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/receptionist', receptionistRoutes);
 app.use('/api/patient', patientRoutes);
-app.use('/api/dentist', dentistRoutes); 
-app.use('/api/billing', billingRoutes); 
-app.use('/api/inventory', inventoryRoutes); 
 
 app.get('/', (req, res) => {
     res.send(`You Are On PORT ${PORT}`);
 });
 
-// Create HTTP server to attach Socket.io
-const server = http.createServer(app);
-socket.init(server); 
-
-server.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`Server is Listening on PORT : ${PORT}`);
 });
-

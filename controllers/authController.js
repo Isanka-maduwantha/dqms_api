@@ -40,6 +40,7 @@ async function login(req, res) {
             token,
             user: {
                 id: existingUser.id,
+                name: existingUser.name,
                 email: existingUser.email,
                 role: existingUser.role,
             },
@@ -95,6 +96,57 @@ async function registerUser(req, res) {
 }
 
 /**
+ * Admin-only login. Only succeeds when the matching user's role is "admin".
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+async function adminLogin(req, res) {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and Password are required' });
+        }
+
+        const existingUser = await User.findOne({ email });
+
+        if (!existingUser || existingUser.role !== 'admin') {
+            return res.status(401).json({ message: 'Invalid Email or password' });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, existingUser.passwordHash);
+        if (!isPasswordValid) {
+            return res.status(401).json({ message: 'Invalid password' });
+        }
+
+        const token = jwt.sign(
+            {
+                id: existingUser.id,
+                email: existingUser.email,
+                role: existingUser.role
+            },
+            env.JWT_SECRET || "some-long-random-secret",
+            { expiresIn: '1d' }
+        );
+
+        return res.status(200).json({
+            message: 'Login Successful',
+            token,
+            user: {
+                id: existingUser.id,
+                name: existingUser.name,
+                email: existingUser.email,
+                role: existingUser.role,
+            },
+        });
+    } catch (error) {
+        console.error('Admin Login Error', error);
+        return res.status(500).json({ message: 'Internal Server error' });
+    }
+}
+
+/**
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  */
@@ -138,6 +190,7 @@ async function registerReceptionist(req, res) {
 
 module.exports = {
     login,
+    adminLogin,
     registerUser,
     registerReceptionist
 };
