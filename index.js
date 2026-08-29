@@ -26,7 +26,6 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
 // Application Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminAuthRoutes);

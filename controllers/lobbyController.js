@@ -3,7 +3,7 @@ const Appointments = require('../models/Appointments');
 
 async function getLobbyData(req, res) {
     // Get Today's Date in 'YYYY-MM-DD' format matching your DB strings
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date("2026-08-31").toISOString().split('T')[0];
     console.log("Fetching appointments for date:", today);
 
     try {

@@ -79,7 +79,8 @@ async function getSlots(req, res) {
 
             current = new Date(current.getTime() + Number(slotDurationMinutes) * 60000);
         }
-
+        console.log("New Day Slots")
+        console.log(slots)
         return res.status(200).json({ success: true, date, slots });
     } catch (error) {
         console.error('Error fetching appointment slots:', error);
