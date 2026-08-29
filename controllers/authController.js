@@ -126,7 +126,7 @@ async function adminLogin(req, res) {
                 email: existingUser.email,
                 role: existingUser.role
             },
-            env.JWT_SECRET || "some-long-random-secret",
+            env.JWT_SECRET ,
             { expiresIn: '1d' }
         );
 

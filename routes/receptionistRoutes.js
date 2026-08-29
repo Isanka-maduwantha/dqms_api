@@ -1,12 +1,8 @@
 const express = require('express');
-
 const router = express.Router();
+const receptionistController = require('../controllers/receptionistController');
 
-const receptionistController =
-  require('../controllers/receptionistController');
-
-const billingController =
-  require('../controllers/billingController');
+const billingController = require('../controllers/billingController');
 
 const {
   authenticateToken,

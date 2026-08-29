@@ -8,5 +8,5 @@ const { login, registerUser, registerReceptionist } = require('../controllers/au
 Router.post('/login', login)
 Router.post('/register', registerUser)
 Router.post('/register-receptionist', registerReceptionist) // <-- Added this endpoint
-
+Router.post('/register-admin', registerReceptionist)
 module.exports = Router;
