@@ -21,7 +21,7 @@ dns.setServers(['8.8.8.8', '1.1.1.1']); // Forces Node to use Google and Cloudfl
 dbConnection();
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true 
 }));
 
