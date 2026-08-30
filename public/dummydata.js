@@ -1,12 +1,12 @@
 const WorkingHours = require('../models/WorkingHours');
 
 const defaultHours = [
-  { dayOfWeek: 'Monday', startTime: '09:00', endTime: '17:00', slotDurationMinutes: 15 },
-  { dayOfWeek: 'Tuesday', startTime: '09:00', endTime: '17:00', slotDurationMinutes: 15 },
-  { dayOfWeek: 'Wednesday', startTime: '09:00', endTime: '17:00', slotDurationMinutes: 15 },
-  { dayOfWeek: 'Thursday', startTime: '09:00', endTime: '17:00', slotDurationMinutes: 15 },
-  { dayOfWeek: 'Friday', startTime: '09:00', endTime: '17:00', slotDurationMinutes: 15 },
-  { dayOfWeek: 'Saturday', startTime: '09:00', endTime: '13:00', slotDurationMinutes: 15 }
+  { dayOfWeek: 'Monday', startTime: '09:00', endTime: '21:00', slotDurationMinutes: 30 },
+  { dayOfWeek: 'Tuesday', startTime: '09:00', endTime: '21:00', slotDurationMinutes: 30 },
+  { dayOfWeek: 'Wednesday', startTime: '09:00', endTime: '21:00', slotDurationMinutes: 30 },
+  { dayOfWeek: 'Thursday', startTime: '09:00', endTime: '21:00', slotDurationMinutes: 30 },
+  { dayOfWeek: 'Friday', startTime: '09:00', endTime: '21:00', slotDurationMinutes: 30 },
+  { dayOfWeek: 'Saturday', startTime: '09:00', endTime: '12:00', slotDurationMinutes: 30 }
 ];
 
 async function seedWorkingHours() {

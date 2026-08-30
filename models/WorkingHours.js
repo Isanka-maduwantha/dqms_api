@@ -15,7 +15,7 @@ const WorkingHoursSchema = new mongoose.Schema({
     },
     slotDurationMinutes: {
         type: Number,
-        default: 15
+        default: 60
     }
 })
 
