@@ -10,6 +10,7 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes');
 const patientRoutes = require('./routes/patientRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 const lobby = require('./routes/lobby')
 const PORT = env.PORT || 3000;
 const cors = require('cors');
@@ -36,6 +37,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/receptionist', receptionistRoutes);
 app.use('/api/patient', patientRoutes);
+app.use('/api/profile', profileRoutes);
 app.use('/api/public/',lobby)
 app.get('/', (req, res) => {
     res.send(`You Are On PORT ${PORT}`);
@@ -44,3 +46,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is Listening on PORT : ${PORT}`);
 });
+

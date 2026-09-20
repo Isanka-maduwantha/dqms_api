@@ -340,7 +340,7 @@ async function buildTreatmentReport(req) {
     )
     .populate(
       'treatmentRecords.appointmentId',
-      'appointmentDate startTime endTime type visitPurpose status tokenNumber'
+      'appointmentDate appointmentPeriod appointmentNumber appointmentCategory startTime endTime type visitPurpose status tokenNumber'
     )
     .populate(
       'treatmentRecords.treatmentTypeId',
@@ -375,6 +375,12 @@ async function buildTreatmentReport(req) {
               id: record.appointmentId._id,
               appointmentDate:
                 record.appointmentId.appointmentDate,
+              appointmentPeriod:
+                record.appointmentId.appointmentPeriod,
+              appointmentNumber:
+                record.appointmentId.appointmentNumber,
+              appointmentCategory:
+                record.appointmentId.appointmentCategory,
               startTime:
                 record.appointmentId.startTime,
               endTime:

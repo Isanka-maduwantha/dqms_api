@@ -1,142 +1,125 @@
-const WorkingHours = require('../models/WorkingHours');
-const DoctorLeave = require('../models/DoctorLeave');
+const mongoose = require('mongoose');
 const Appointments = require('../models/Appointments');
-const {validateAppointmentSlot} = require('../helpers/appointmentValidator');
-const { parseTimeToDate,formatHHMM} = require('../helpers/timeDateFunctions')
-// Getting Avaliable Slots 
-// @ts-ignore
+const {
+  getAppointmentPeriods,
+  validateAppointmentPeriod,
+  allocateAppointmentNumber,
+  getPeriodConfig,
+} = require('../helpers/appointmentPeriods');
+
 async function getSlots(req, res) {
-    try {
-        const { date } = req.query;
-
-        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
-            return res.status(400).json({
-                success: false,
-                error: 'A valid appointment date (YYYY-MM-DD) is required.',
-            });
-        }
-
-        const dateObj = new Date(`${date}T00:00:00`);
-        if (Number.isNaN(dateObj.getTime())) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid appointment date.',
-            });
-        }
-
-        const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-        const schedule = await WorkingHours.findOne({ dayOfWeek: dayName });
-
-        if (!schedule) {
-            return res.status(200).json({
-                success: true,
-                date,
-                slots: [],
-                message: `Clinic is closed on ${dayName}.`,
-            });
-        }
-
-        const bookedAppointments = await Appointments.find({
-            appointmentDate: date,
-            status: { $in: ['BOOKED', 'ARRIVED'] },
-        }).select('startTime');
-
-        const bookedSet = new Set(
-            bookedAppointments.map((appointment) => appointment.startTime),
-        );
-
-        const leaves = await DoctorLeave.find({ leaveDate: date });
-        const { startTime, endTime, slotDurationMinutes = 15 } = schedule;
-        const slots = [];
-        let current = parseTimeToDate(date, startTime);
-        const end = parseTimeToDate(date, endTime);
-        const now = new Date();
-
-        while (current < end) {
-            const timeStr = formatHHMM(current);
-            const isPast = current < now;
-            const isBooked = bookedSet.has(timeStr);
-
-            const isOnLeave = leaves.some((leave) => {
-                if (!leave.startTime || !leave.endTime) return true;
-                const leaveStart = parseTimeToDate(date, leave.startTime);
-                const leaveEnd = parseTimeToDate(date, leave.endTime);
-                return current >= leaveStart && current < leaveEnd;
-            });
-
-            const available = !isBooked && !isOnLeave && !isPast;
-            slots.push({
-                time: timeStr,
-                available,
-                reason: isBooked
-                    ? 'Booked'
-                    : isOnLeave
-                      ? 'Doctor Unavailable'
-                      : isPast
-                        ? 'Past Time'
-                        : 'Available',
-            });
-
-            current = new Date(current.getTime() + Number(slotDurationMinutes) * 60000);
-        }
-        console.log("New Day Slots")
-        console.log(slots)
-        return res.status(200).json({ success: true, date, slots });
-    } catch (error) {
-        console.error('Error fetching appointment slots:', error);
-        return res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Server error',
-        });
-    }
+  try {
+    const date = typeof req.query.date === 'string' ? req.query.date.trim() : '';
+    const result = await getAppointmentPeriods(date);
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.message || 'Server error',
+    });
+  }
 }
 
-
-// @ts-ignore
+/**
+ * Patient online appointment booking.
+ *
+ * The patient only chooses:
+ *   - appointment date
+ *   - clinic period
+ *
+ * Appointment category and visit purpose are intentionally NOT
+ * accepted from the patient anymore.
+ *
+ * Visit purpose is selected by the receptionist during check-in.
+ */
 async function bookAppointment(req, res) {
-    try {
-        const patientId = req.user.id;
-        const doctorId = "6a787768d07b93f80e198115";
-        const {
-            // doctorId,
-            appointmentDate,
-            startTime,
-            endTime,
-            type,
-            visitPurpose,
-        } = req.body;
-        // console.log("hello")
-        await validateAppointmentSlot(appointmentDate,startTime);
-        const appointment = {
-            doctorId,
-            patientId,
-            appointmentDate,
-            startTime,
-            endTime,
-            type: type || 'CHECKUP',
-            visitPurpose: visitPurpose || 'NEW_TREATMENT',
-        };
-        console.log(appointment);
-        const newAppointment = await Appointments.create(appointment);
+  try {
+    const patientId = req.user?.id;
 
-        return res.status(201).json({
-            success: true,
-            message: 'Appointment booked Successfully',
-            newAppointment,
-        });
-    } catch (error) {
-        // @ts-ignore
-        const statusCode = error.statusCode || 500;
-        res.status(statusCode).json({
-            // @ts-ignore
-            message: error.message || 'Internal Server Error',
-        });
+    if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authenticated patient information is missing or invalid.',
+      });
     }
+
+    const doctorId = process.env.DEFAULT_DENTIST_ID || null;
+    const {
+      appointmentDate,
+      appointmentPeriod,
+    } = req.body || {};
+
+    const validation = await validateAppointmentPeriod(
+      appointmentDate,
+      appointmentPeriod,
+    );
+
+    const period = validation.period;
+    const config = getPeriodConfig(period);
+
+    let appointmentNumber = null;
+    let newAppointment = null;
+
+    for (let attempt = 0; attempt < 8 && !newAppointment; attempt += 1) {
+      appointmentNumber = await allocateAppointmentNumber(
+        appointmentDate,
+        period,
+      );
+
+      try {
+        newAppointment = await Appointments.create({
+          doctorId,
+          patientId,
+          appointmentDate,
+          appointmentPeriod: period,
+
+          // Patient no longer selects an appointment category.
+          appointmentCategory: null,
+
+          appointmentNumber,
+          treatmentTypeId: null,
+          startTime: config.startTime,
+          endTime: config.endTime,
+
+          // Keep the legacy appointment type for compatibility.
+          type: 'CHECKUP',
+
+          // Receptionist will select this at check-in.
+          visitPurpose: null,
+
+          status: 'BOOKED',
+          tokenNumber: null,
+          isPriority: false,
+          priorityType: null,
+        });
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
+    }
+
+    if (!newAppointment) {
+      return res.status(409).json({
+        success: false,
+        message: 'This appointment period was just updated. Please try booking again.',
+      });
+    }
+
+    const populated = await Appointments.findById(newAppointment._id).lean();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Appointment booked successfully.',
+      appointment: populated,
+      appointmentNumber,
+      appointmentPeriod: period,
+      treatment: null,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Internal Server Error',
+    });
+  }
 }
 
-
-
-module.exports = {
-    getSlots,
-    bookAppointment
-}
+module.exports = { getSlots, bookAppointment };

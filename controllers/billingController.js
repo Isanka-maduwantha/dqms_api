@@ -53,7 +53,7 @@ exports.getInvoice = async (req, res) => {
 
     const invoice = await Invoice.findById(invoiceId)
       .populate('patientId', 'name phone email nic')
-      .populate('appointmentId', 'appointmentDate startTime endTime status visitPurpose')
+      .populate('appointmentId', 'appointmentDate appointmentPeriod appointmentNumber appointmentCategory startTime endTime status visitPurpose')
       .lean();
 
     if (!invoice) {
@@ -318,7 +318,7 @@ exports.getPatientOverview = async (
         )
         .populate(
           'treatmentRecords.appointmentId',
-          'appointmentDate startTime endTime type visitPurpose status tokenNumber',
+          'appointmentDate appointmentPeriod appointmentNumber appointmentCategory startTime endTime type visitPurpose status tokenNumber',
         )
         .lean();
 
@@ -432,7 +432,7 @@ exports.getInvoice = async (
         )
         .populate(
           'appointmentId',
-          'appointmentDate startTime endTime status visitPurpose',
+          'appointmentDate appointmentPeriod appointmentNumber appointmentCategory startTime endTime status visitPurpose',
         )
         .lean();
 

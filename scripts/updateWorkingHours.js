@@ -26,7 +26,6 @@ async function run() {
                     dayOfWeek: day,
                     startTime: '09:00',
                     endTime: '22:00',
-                    slotDurationMinutes: 15
                 },
                 {
                     upsert: true,

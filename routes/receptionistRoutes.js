@@ -64,6 +64,11 @@ router.patch(
   receptionistController.markArrived
 );
 
+router.patch(
+  '/priority/:appointmentId',
+  receptionistController.markEmergencyPriority
+);
+
 // ==========================================================
 // SCENARIO 3
 // Receptionist books appointment for patient.
