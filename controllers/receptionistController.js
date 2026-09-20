@@ -2,15 +2,18 @@ const Appointments = require('../models/Appointments');
 const User = require('../models/user');
 const WorkingHours = require('../models/WorkingHours');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
+const DentalTreatment = require('../models/DentalTreatment');
 
 const {
-  validateAppointmentSlot
-} = require('../helpers/appointmentValidator');
+  validateAppointmentPeriod,
+  allocateAppointmentNumber,
+  allocateQueueToken,
+  getPeriodConfig,
+  getClinicTodayKey,
+} = require('../helpers/appointmentPeriods');
 
-const {
-  parseTimeToDate,
-  formatHHMM
-} = require('../helpers/timeDateFunctions');
+
 
 /**
  * Get all registered patients.
@@ -34,6 +37,7 @@ exports.searchPatients = async (req, res) => {
       $or: [
         { name: { $regex: escapedQuery, $options: 'i' } },
         { email: { $regex: escapedQuery, $options: 'i' } },
+        { nic: { $regex: escapedQuery, $options: 'i' } },
       ],
     })
       .select('_id name phone email nic role')
@@ -80,36 +84,21 @@ exports.getAllPatients = async (req, res) => {
 exports.getTodayAppointments = async (req, res) => {
   try {
     const { date } = req.query;
+    const targetDate = typeof date === 'string' ? date : getClinicTodayKey();
 
-    const targetDate =
-      typeof date === 'string'
-        ? date
-        : new Date().toISOString().split('T')[0];
+    const appointments = await Appointments.find({ appointmentDate: targetDate })
+      .populate('patientId', 'name phone email nic age gender address')
+      .sort({
+        isPriority: -1,
+        startTime: 1,
+        appointmentNumber: 1,
+        tokenNumber: 1,
+        createdAt: 1,
+      });
 
-    const appointments =
-      await Appointments.find({
-        appointmentDate: targetDate
-      })
-        .populate(
-          'patientId',
-          'name phone email nic age gender address'
-        )
-        .sort({
-          startTime: 1
-        });
-
-    res.status(200).json({
-      success: true,
-      data: appointments
-    });
+    return res.status(200).json({ success: true, data: appointments });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to retrieve appointments'
-    });
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to retrieve appointments' });
   }
 };
 
@@ -122,40 +111,19 @@ exports.getTodayAppointments = async (req, res) => {
 exports.getQueue = async (req, res) => {
   try {
     const { date } = req.query;
+    const targetDate = typeof date === 'string' ? date : getClinicTodayKey();
 
-    const targetDate =
-      typeof date === 'string'
-        ? date
-        : new Date().toISOString().split('T')[0];
+    const queue = await Appointments.find({
+      appointmentDate: targetDate,
+      status: 'ARRIVED',
+      tokenNumber: { $ne: null },
+    })
+      .populate('patientId', 'name phone email nic age gender address')
+      .sort({ isPriority: -1, priorityMarkedAt: 1, tokenNumber: 1 });
 
-    const queue =
-      await Appointments.find({
-        appointmentDate: targetDate,
-        status: 'ARRIVED',
-        tokenNumber: {
-          $ne: null
-        }
-      })
-        .populate(
-          'patientId',
-          'name phone email nic age gender address'
-        )
-        .sort({
-          tokenNumber: 1
-        });
-
-    res.status(200).json({
-      success: true,
-      data: queue
-    });
+    return res.status(200).json({ success: true, data: queue });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to retrieve queue'
-    });
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to retrieve queue' });
   }
 };
 
@@ -164,112 +132,137 @@ exports.getQueue = async (req, res) => {
  *
  * BOOKED appointment
  *       ↓
- * receptionist checks in
+ * receptionist clicks Check In
  *       ↓
- * ARRIVED
+ * receptionist selects Visit Purpose
  *       ↓
- * token generated
+ * ARRIVED + queue token + visit purpose
+ *
+ * Billing is NOT created here.
+ *
+ * If the purpose is NEW_TREATMENT, the dentist completes the
+ * treatment first. The invoice is then created by the dentist's
+ * end-treatment flow.
  */
 exports.markArrived = async (req, res) => {
   try {
     const { appointmentId } = req.params;
+    const { visitPurpose } = req.body || {};
 
-    if (!appointmentId) {
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
       return res.status(400).json({
         success: false,
-        message: 'Appointment ID is required'
+        message: 'Valid appointment ID is required.',
       });
     }
 
-    const appointment =
-      await Appointments.findById(
-        appointmentId
-      ).populate(
-        'patientId',
-        'name phone email nic age gender address'
-      );
+    const normalizedPurpose = String(visitPurpose || '')
+      .trim()
+      .toUpperCase();
+
+    const allowedPurposes = [
+      'NEW_TREATMENT',
+      'FOLLOW_UP',
+      'CHECKUP_SCREENING',
+    ];
+
+    if (!allowedPurposes.includes(normalizedPurpose)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Visit purpose is required and must be NEW_TREATMENT, FOLLOW_UP, or CHECKUP_SCREENING.',
+      });
+    }
+
+    const appointment = await Appointments.findById(appointmentId);
 
     if (!appointment) {
       return res.status(404).json({
         success: false,
-        message: 'Appointment not found'
+        message: 'Appointment not found.',
       });
     }
 
     if (appointment.status === 'ARRIVED') {
+      const populated = await Appointments.findById(appointment._id)
+        .populate('patientId', 'name phone email nic age gender address')
+        .populate('treatmentTypeId', 'code name category description price');
+
       return res.status(200).json({
         success: true,
-        message:
-          'Patient has already been checked in.',
-        appointment,
-        tokenNumber:
-          appointment.tokenNumber
+        message: 'Patient has already been checked in.',
+        tokenNumber: appointment.tokenNumber,
+        visitPurpose: appointment.visitPurpose,
+        appointment: populated,
       });
     }
 
     if (appointment.status !== 'BOOKED') {
       return res.status(400).json({
         success: false,
-        message:
-          `Appointment cannot be checked in because its current status is ${appointment.status}.`
+        message: `Appointment cannot be checked in because its current status is ${appointment.status}.`,
       });
     }
 
-    const lastTokenAppointment =
-      await Appointments.findOne({
-        appointmentDate:
-          appointment.appointmentDate,
-        tokenNumber: {
-          $ne: null
-        }
-      })
-        .sort({
-          tokenNumber: -1
-        })
-        .select('tokenNumber');
+    let updatedAppointment = null;
+    let nextTokenNumber = null;
 
-    const nextTokenNumber =
-      lastTokenAppointment &&
-      typeof lastTokenAppointment.tokenNumber ===
-        'number'
-        ? lastTokenAppointment.tokenNumber + 1
-        : 1;
-
-    appointment.status = 'ARRIVED';
-    appointment.tokenNumber =
-      nextTokenNumber;
-
-    await appointment.save();
-
-    const updatedAppointment =
-      await Appointments.findById(
-        appointment._id
-      ).populate(
-        'patientId',
-        'name phone email nic age gender address'
+    for (let attempt = 0; attempt < 8 && !updatedAppointment; attempt += 1) {
+      nextTokenNumber = await allocateQueueToken(
+        appointment.appointmentDate,
       );
+
+      try {
+        updatedAppointment = await Appointments.findOneAndUpdate(
+          {
+            _id: appointmentId,
+            status: 'BOOKED',
+            tokenNumber: null,
+          },
+          {
+            $set: {
+              status: 'ARRIVED',
+              tokenNumber: nextTokenNumber,
+              visitPurpose: normalizedPurpose,
+            },
+          },
+          { new: true },
+        );
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
+    }
+
+    if (!updatedAppointment) {
+      return res.status(409).json({
+        success: false,
+        message:
+          'Check-in was updated by another receptionist. Please refresh the queue.',
+      });
+    }
+
+    const populatedAppointment = await Appointments.findById(
+      updatedAppointment._id,
+    )
+      .populate('patientId', 'name phone email nic age gender address')
+      .populate('treatmentTypeId', 'code name category description price');
 
     return res.status(200).json({
       success: true,
       message:
-        'Patient checked in successfully and token generated.',
-      tokenNumber:
-        nextTokenNumber,
-      appointment:
-        updatedAppointment
+        normalizedPurpose === 'NEW_TREATMENT'
+          ? 'Patient checked in successfully. Token generated. Invoice will be created after the dentist completes the treatment.'
+          : 'Patient checked in successfully and token generated. No invoice will be created for this visit purpose.',
+      tokenNumber: nextTokenNumber,
+      visitPurpose: normalizedPurpose,
+      appointment: populatedAppointment,
     });
   } catch (error) {
-    console.error(
-      'Check-in error:',
-      error
-    );
+    console.error('Check-in error:', error);
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to check in patient'
+      message: error.message || 'Failed to check in patient.',
     });
   }
 };
@@ -284,69 +277,77 @@ exports.markArrived = async (req, res) => {
  */
 exports.bookAppointmentForPatient = async (req, res) => {
   try {
-    const { patientId, appointmentDate, startTime, type, visitPurpose } = req.body;
+    const { patientId, appointmentDate, appointmentPeriod, appointmentCategory, treatmentTypeId, type, visitPurpose } = req.body || {};
+    if (!patientId || !appointmentDate || !appointmentPeriod) {
+      return res.status(400).json({ success: false, message: 'Patient ID, appointment date and appointment period are required.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(patientId)) return res.status(400).json({ success: false, message: 'Invalid patient ID.' });
 
-    if (!patientId || !appointmentDate || !startTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Patient ID, appointment date and start time are required.',
-      });
+    const patient = await User.findOne({ _id: patientId, role: 'patient' }).select('name phone email nic age gender address role').lean();
+    if (!patient) return res.status(404).json({ success: false, message: 'Patient account not found.' });
+
+    let treatment = null;
+    if (treatmentTypeId !== undefined && treatmentTypeId !== null && treatmentTypeId !== '') {
+      if (!mongoose.Types.ObjectId.isValid(treatmentTypeId)) return res.status(400).json({ success: false, message: 'Invalid treatment type ID.' });
+      treatment = await DentalTreatment.findOne({ _id: treatmentTypeId, isActive: true }).select('_id code name category description price').lean();
+      if (!treatment) return res.status(404).json({ success: false, message: 'Selected treatment type was not found or is inactive.' });
     }
 
-    const patient = await User.findOne({ _id: patientId, role: 'patient' })
-      .select('name phone email nic age gender address role')
-      .lean();
+    const legacyType = String(type || '').trim().toUpperCase();
+    const categoryFromLegacyType = {
+      CHECKUP: 'ROUTINE_CHECKUP',
+      NEW_PATIENT: 'NEW_PATIENT_REGISTRATION',
+      OTHER: 'SPECIALIST_OTHER_PURPOSE',
+      EMERGENCY: 'SPECIALIST_OTHER_PURPOSE',
+      ARRIVED: 'SPECIALIST_OTHER_PURPOSE',
+    }[legacyType];
+    const normalizedCategory = String(appointmentCategory || categoryFromLegacyType || '').trim().toUpperCase();
+    const allowedCategories = ['ROUTINE_CHECKUP', 'NEW_PATIENT_REGISTRATION', 'SPECIALIST_OTHER_PURPOSE'];
+    if (!allowedCategories.includes(normalizedCategory)) return res.status(400).json({ success: false, message: 'Invalid appointment category.' });
 
-    if (!patient) {
-      return res.status(404).json({ success: false, message: 'Patient account not found.' });
+    const normalizedType = ['CHECKUP', 'ARRIVED', 'NEW_PATIENT', 'EMERGENCY', 'OTHER'].includes(legacyType) ? legacyType : 'CHECKUP';
+    const normalizedPurpose = String(visitPurpose || 'NEW_TREATMENT').trim().toUpperCase();
+    const allowedPurposes = ['NEW_TREATMENT', 'FOLLOW_UP', 'CHECKUP_SCREENING'];
+    if (!allowedPurposes.includes(normalizedPurpose)) return res.status(400).json({ success: false, message: 'Invalid visit purpose.' });
+
+    const validation = await validateAppointmentPeriod(appointmentDate, appointmentPeriod);
+    const period = validation.period;
+    const config = getPeriodConfig(period);
+    let appointment = null;
+    let appointmentNumber = null;
+
+    for (let attempt = 0; attempt < 8 && !appointment; attempt += 1) {
+      appointmentNumber = await allocateAppointmentNumber(appointmentDate, period);
+      try {
+        appointment = await Appointments.create({
+          patientId: patient._id,
+          appointmentDate,
+          appointmentPeriod: period,
+          appointmentNumber,
+          appointmentCategory: normalizedCategory,
+          treatmentTypeId: treatment?._id || null,
+          startTime: config.startTime,
+          endTime: config.endTime,
+          type: normalizedType,
+          visitPurpose: normalizedPurpose,
+          status: 'BOOKED',
+          tokenNumber: null,
+          isPriority: false,
+          priorityType: null,
+        });
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
     }
 
-    await validateAppointmentSlot(appointmentDate, startTime);
-
-    const dateObject = new Date(`${appointmentDate}T00:00:00`);
-    const dayName = dateObject.toLocaleDateString('en-US', { weekday: 'long' });
-    const schedule = await WorkingHours.findOne({ dayOfWeek: dayName });
-
-    if (!schedule) {
-      return res.status(400).json({ success: false, message: `Clinic is closed on ${dayName}.` });
-    }
-
-    const slotDuration = Number(schedule.slotDurationMinutes || 15);
-    const startDateTime = parseTimeToDate(appointmentDate, startTime);
-    const endDateTime = new Date(startDateTime.getTime() + slotDuration * 60000);
-    const endTime = formatHHMM(endDateTime);
-
-    const appointment = await Appointments.create({
-      patientId: patient._id,
-      appointmentDate,
-      startTime,
-      endTime,
-      type: type || 'CHECKUP',
-      visitPurpose: visitPurpose || 'NEW_TREATMENT',
-      status: 'BOOKED',
-      tokenNumber: null,
-    });
-
+    if (!appointment) return res.status(409).json({ success: false, message: 'This appointment period was just updated. Please try again.' });
     const populatedAppointment = await Appointments.findById(appointment._id)
-      .populate('patientId', 'name phone email nic age gender address');
-
-    return res.status(201).json({
-      success: true,
-      message: 'Appointment reserved successfully.',
-      appointment: populatedAppointment,
-    });
+      .populate('patientId', 'name phone email nic age gender address')
+      .populate('treatmentTypeId', 'code name category description price');
+    return res.status(201).json({ success: true, message: 'Appointment reserved successfully.', appointment: populatedAppointment, appointmentNumber, appointmentPeriod: period });
   } catch (error) {
     console.error('Receptionist appointment booking error:', error);
-
-    const statusCode =
-      error && typeof error === 'object' && 'statusCode' in error && typeof error.statusCode === 'number'
-        ? error.statusCode
-        : 500;
-
-    return res.status(statusCode).json({
-      success: false,
-      message: error instanceof Error ? error.message : 'Failed to create appointment.',
-    });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Failed to create appointment.' });
   }
 };
 
@@ -356,94 +357,66 @@ exports.bookAppointmentForPatient = async (req, res) => {
  * This remains separate from the pre-booked
  * appointment check-in flow.
  */
-exports.generateWalkInToken =
-  async (req, res) => {
-    try {
-      const {
-        name,
-        phone,
-        nic,
-        appointmentDate,
-        startTime,
-        endTime,
-        age,
-        gender,
-        address
-      } = req.body;
+exports.generateWalkInToken = async (req, res) => {
+  try {
+    const { name, phone, nic, appointmentDate, appointmentPeriod, age, gender, address, emergency } = req.body;
+    let patient = await User.findOne({ nic });
 
-      let patient =
-        await User.findOne({
-          nic
-        });
-
-      if (!patient) {
-        patient =
-          await User.create({
-            name,
-            nic,
-            phone,
-            email:
-              `${nic || Date.now()}@walkin.local`,
-            passwordHash:
-              'WALKIN_USER',
-            role: 'patient',
-            age:
-              age || null,
-            gender:
-              gender || null,
-            address:
-              address || null
-          });
-      }
-
-      const walkInAppointment =
-        await Appointments.create({
-          patientId:
-            patient._id,
-
-          appointmentDate:
-            appointmentDate ||
-            new Date()
-              .toISOString()
-              .split('T')[0],
-
-          startTime:
-            startTime ||
-            '09:00',
-
-          endTime:
-            endTime ||
-            '09:15',
-
-          status:
-            'BOOKED'
-        });
-
-      const tokenNumber =
-        `W-${Math.floor(
-          100 +
-          Math.random() * 900
-        )}`;
-
-      res.status(201).json({
-        success: true,
-        message:
-          'Walk-in token generated successfully',
-        token:
-          tokenNumber,
-        walkInAppointment,
-        patient
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Failed to generate walk-in token'
+    if (!patient) {
+      patient = await User.create({
+        name, nic, phone, email: `${nic || Date.now()}@walkin.local`, passwordHash: 'WALKIN_USER', role: 'patient',
+        age: age || null, gender: gender || null, address: address || null,
       });
     }
-  };
+
+    const date = appointmentDate || getClinicTodayKey();
+    const nextToken = await allocateQueueToken(date);
+    const isPriority = Boolean(emergency);
+    const walkInAppointment = await Appointments.create({
+      patientId: patient._id, appointmentDate: date, appointmentPeriod: appointmentPeriod || null,
+      appointmentNumber: null, startTime: null, endTime: null, status: 'ARRIVED', tokenNumber: nextToken,
+      type: isPriority ? 'EMERGENCY' : 'OTHER',
+      // Walk-in patients enter the queue immediately. Preserve the
+      // existing walk-in behavior by treating them as new-treatment
+      // visits unless a future walk-in purpose selector is introduced.
+      visitPurpose: 'NEW_TREATMENT',
+      isPriority,
+      priorityType: isPriority ? 'EMERGENCY' : null,
+      priorityMarkedAt: isPriority ? new Date() : null,
+    });
+
+    return res.status(201).json({ success: true, message: isPriority ? 'Emergency patient added to priority queue.' : 'Walk-in patient added to queue.', token: nextToken, tokenNumber: nextToken, walkInAppointment, patient });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to generate walk-in token' });
+  }
+};
+
+/**
+ * Mark an existing appointment as receptionist-controlled emergency priority.
+ */
+exports.markEmergencyPriority = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const appointment = await Appointments.findById(appointmentId);
+    if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found.' });
+    if (['COMPLETED', 'CANCELLED'].includes(appointment.status)) return res.status(400).json({ success: false, message: `Cannot prioritize an appointment with status ${appointment.status}.` });
+
+    appointment.isPriority = true;
+    appointment.priorityType = 'EMERGENCY';
+    appointment.priorityMarkedAt = new Date();
+    appointment.priorityMarkedBy = req.user.id;
+    if (appointment.type !== 'EMERGENCY') appointment.type = 'EMERGENCY';
+    await appointment.save();
+
+    const populated = await Appointments.findById(appointment._id)
+      .populate('patientId', 'name phone email nic age gender address')
+      .populate('priorityMarkedBy', 'name email role');
+
+    return res.status(200).json({ success: true, message: 'Patient has been marked as emergency priority.', appointment: populated });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to mark emergency priority.' });
+  }
+};
 
 /**
  * ============================================================

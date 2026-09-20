@@ -3,7 +3,7 @@ const puppeteer = require('puppeteer');
 exports.generateAppointmentSlipPdf = async (appointment) => {
     let browser;
     try {
-        const { _id, patientId, appointmentDate, startTime, endTime } = appointment;
+        const { _id, patientId, appointmentDate, appointmentPeriod, appointmentNumber, startTime, endTime } = appointment;
 
 const htmlFile = `
 <!DOCTYPE html>
@@ -132,6 +132,21 @@ const htmlFile = `
       <div class="icon">✓</div>
       <h2>Appointment Slip</h2>
       <p>Please keep this for your records</p>
+    </div>
+
+    <div class="data-row">
+      <span class="label">Appointment Number</span>
+      <span class="value">${appointmentNumber ?? '-'}</span>
+    </div>
+
+    <div class="data-row">
+      <span class="label">Time Period</span>
+      <span class="value">${appointmentPeriod || '-'}</span>
+    </div>
+
+    <div class="data-row">
+      <span class="label">Visit Purpose</span>
+      <span class="value">Selected by reception at check-in</span>
     </div>
 
     <div class="data-row">

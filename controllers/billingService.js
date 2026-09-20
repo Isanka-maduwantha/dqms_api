@@ -7,14 +7,27 @@ const clinic = require('../config/clinic');
 
 function getBillingPurpose(appointment) {
   if (appointment?.visitPurpose) {
-    return appointment.visitPurpose;
+    return String(appointment.visitPurpose).trim().toUpperCase();
   }
 
-  // Backward compatibility with existing appointments.
+  /*
+   * New online patient bookings deliberately have no visitPurpose
+   * until receptionist check-in.
+   *
+   * They currently retain the legacy type CHECKUP for compatibility,
+   * so an un-checked-in appointment must never become billable.
+   *
+   * Older appointments that already stored a visitPurpose continue
+   * to use that value above.
+   */
   if (appointment?.type === 'CHECKUP') {
-    return 'CHECKUP';
+    return 'CHECKUP_SCREENING';
   }
 
+  /*
+   * Preserve the previous behavior for legacy walk-in/other records
+   * that pre-date the receptionist visit-purpose workflow.
+   */
   return 'NEW_TREATMENT';
 }
 
@@ -146,7 +159,7 @@ async function getPatientBilling(patientId) {
   const [invoices, payments] = await Promise.all([
     Invoice.find({ patientId })
       .sort({ issuedDate: -1 })
-      .populate('appointmentId', 'appointmentDate startTime endTime status visitPurpose')
+      .populate('appointmentId', 'appointmentDate appointmentPeriod appointmentNumber appointmentCategory startTime endTime status visitPurpose')
       .lean(),
     Payment.find({ patientId })
       .sort({ paymentDate: -1 })

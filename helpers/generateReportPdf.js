@@ -546,30 +546,34 @@ async function generateReportPdf({
 
             body {
               font-family: Arial, Helvetica, sans-serif;
-              color: #222;
+              color: #16352b;
               font-size: 10px;
               margin: 0;
             }
 
             .header {
-              border-bottom: 2px solid #222;
-              padding-bottom: 10px;
+              border-bottom: 3px solid #1f8f5f;
+              padding-bottom: 12px;
               margin-bottom: 15px;
             }
 
             .clinic-name {
-              font-size: 20px;
+              font-size: 22px;
               font-weight: bold;
+              color: #157347;
+              letter-spacing: 0.2px;
             }
 
             .report-title {
               font-size: 16px;
+              font-weight: 600;
+              color: #16352b;
               margin-top: 5px;
             }
 
             .metadata {
               margin-top: 8px;
-              color: #555;
+              color: #4b6359;
             }
 
             .summary-grid {
@@ -581,14 +585,16 @@ async function generateReportPdf({
             }
 
             .summary-card {
-              border: 1px solid #ccc;
+              border: 1px solid #b9ddcc;
+              border-left: 4px solid #1f8f5f;
+              background: #f4fbf7;
               padding: 8px;
-              border-radius: 4px;
+              border-radius: 8px;
               min-height: 55px;
             }
 
             .summary-label {
-              color: #666;
+              color: #527064;
               font-size: 8px;
               text-transform: uppercase;
             }
@@ -606,16 +612,21 @@ async function generateReportPdf({
             }
 
             th {
-              background: #eeeeee;
+              background: #1f8f5f;
+              color: #ffffff;
               font-weight: bold;
             }
 
             th,
             td {
-              border: 1px solid #ccc;
+              border: 1px solid #b9ddcc;
               padding: 5px;
               text-align: left;
               vertical-align: top;
+            }
+
+            tbody tr:nth-child(even) {
+              background: #f8fcfa;
             }
 
             tr {
@@ -623,14 +634,14 @@ async function generateReportPdf({
             }
 
             small {
-              color: #666;
+              color: #527064;
             }
 
             .footer {
               margin-top: 20px;
               padding-top: 8px;
               border-top: 1px solid #ccc;
-              color: #666;
+              color: #527064;
               font-size: 8px;
             }
           </style>
@@ -639,7 +650,7 @@ async function generateReportPdf({
         <body>
           <div class="header">
             <div class="clinic-name">
-              DQMS Dental Clinic
+              Dental Clinic
             </div>
 
             <div class="report-title">
@@ -672,7 +683,7 @@ async function generateReportPdf({
           )}
 
           <div class="footer">
-            DQMS Dental Clinic -
+            Dental Clinic -
             Administrative Report
           </div>
         </body>

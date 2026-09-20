@@ -7,6 +7,7 @@ const InventoryItem = require('../models/InventoryItem');
 const DentalTreatment = require('../models/DentalTreatment');
 const { createInvoiceForAppointment } = require('./billingService');
 const Notification = require('../models/Notification');
+const { getClinicTodayKey } = require('../helpers/appointmentPeriods');
 
 /**
  * ==========================================================
@@ -20,181 +21,54 @@ const Notification = require('../models/Notification');
 exports.callNextPatient = async (req, res) => {
   try {
     const dentistId = req.user?.id;
-
-    if (!dentistId) {
-      return res.status(401).json({
-        success: false,
-        message:
-          'Authenticated dentist information is missing.',
-      });
-    }
+    if (!dentistId) return res.status(401).json({ success: false, message: 'Authenticated dentist information is missing.' });
 
     const { appointmentId } = req.body || {};
-
     let appointment;
 
-    /**
-     * ========================================================
-     * CALL SPECIFIC PATIENT
-     * ========================================================
-     */
     if (appointmentId) {
-      appointment =
-        await Appointments.findOneAndUpdate(
-          {
-            _id: appointmentId,
-            status: 'ARRIVED',
-            tokenNumber: {
-              $ne: null,
-            },
-          },
-          {
-            $set: {
-              status: 'IN_CONSULTATION',
-              calledAt: new Date(),
-              calledBy: dentistId,
-            },
-          },
-          {
-            new: true,
-          },
-        );
+      appointment = await Appointments.findOneAndUpdate(
+        { _id: appointmentId, status: 'ARRIVED', tokenNumber: { $ne: null } },
+        { $set: { status: 'IN_CONSULTATION', calledAt: new Date(), calledBy: dentistId } },
+        { new: true },
+      );
     } else {
-      /**
-       * ======================================================
-       * CALL NEXT PATIENT
-       * ======================================================
-       *
-       * Select the ARRIVED patient with the lowest token.
-       */
-      const today = new Date()
-        .toISOString()
-        .split('T')[0];
-
-      appointment =
-        await Appointments.findOneAndUpdate(
-          {
-            appointmentDate: today,
-            status: 'ARRIVED',
-            tokenNumber: {
-              $ne: null,
-            },
-          },
-          {
-            $set: {
-              status: 'IN_CONSULTATION',
-              calledAt: new Date(),
-              calledBy: dentistId,
-            },
-          },
-          {
-            new: true,
-            sort: {
-              tokenNumber: 1,
-            },
-          },
-        );
+      const today = getClinicTodayKey();
+      // Emergency/priority patients always come before the normal token queue.
+      // Within each priority level, the original token order is preserved.
+      appointment = await Appointments.findOneAndUpdate(
+        { appointmentDate: today, status: 'ARRIVED', tokenNumber: { $ne: null } },
+        { $set: { status: 'IN_CONSULTATION', calledAt: new Date(), calledBy: dentistId } },
+        { new: true, sort: { isPriority: -1, priorityMarkedAt: 1, tokenNumber: 1 } },
+      );
     }
 
     if (!appointment) {
-      return res.status(404).json({
-        success: false,
-        message: appointmentId
-          ? 'The selected patient is no longer waiting in the queue.'
-          : 'There are no patients waiting in the queue.',
-      });
+      return res.status(404).json({ success: false, message: appointmentId ? 'The selected patient is no longer waiting in the queue.' : 'There are no patients waiting in the queue.' });
     }
 
-    /**
-     * Retrieve populated appointment.
-     */
-    const populatedAppointment =
-      await Appointments.findById(
-        appointment._id,
-      )
-        .populate(
-          'patientId',
-          'name phone email nic',
-        )
-        .populate(
-          'calledBy',
-          'name email role',
-        );
+    const populatedAppointment = await Appointments.findById(appointment._id)
+      .populate('patientId', 'name phone email nic')
+      .populate('calledBy', 'name email role');
 
-    if (!populatedAppointment) {
-      return res.status(404).json({
-        success: false,
-        message:
-          'Appointment could not be retrieved after being called.',
-      });
-    }
+    if (!populatedAppointment) return res.status(404).json({ success: false, message: 'Appointment could not be retrieved after being called.' });
 
-    const patient =
-      populatedAppointment.patientId;
-
+    const patient = populatedAppointment.patientId;
     return res.status(200).json({
       success: true,
-
-      message:
-        'Next patient has been called successfully.',
-
+      message: populatedAppointment.isPriority ? 'Priority patient has been called successfully.' : 'Next patient has been called successfully.',
       appointment: {
-        appointmentId:
-          populatedAppointment._id,
-
-        patientId:
-          patient?._id,
-
-        patientName:
-          patient?.name,
-
-        phone:
-          patient?.phone,
-
-        email:
-          patient?.email,
-
-        nic:
-          patient?.nic,
-
-        startTime:
-          populatedAppointment.startTime,
-
-        endTime:
-          populatedAppointment.endTime,
-
-        appointmentDate:
-          populatedAppointment.appointmentDate,
-
-        tokenNumber:
-          populatedAppointment.tokenNumber,
-
-        status:
-          populatedAppointment.status,
-
-        calledAt:
-          populatedAppointment.calledAt,
-
-        calledBy:
-          populatedAppointment.calledBy,
+        appointmentId: populatedAppointment._id, patientId: patient?._id, patientName: patient?.name, phone: patient?.phone, email: patient?.email, nic: patient?.nic,
+        appointmentDate: populatedAppointment.appointmentDate, appointmentPeriod: populatedAppointment.appointmentPeriod, appointmentCategory: populatedAppointment.appointmentCategory, appointmentNumber: populatedAppointment.appointmentNumber,
+        startTime: populatedAppointment.startTime, endTime: populatedAppointment.endTime, tokenNumber: populatedAppointment.tokenNumber,
+        isPriority: populatedAppointment.isPriority, priorityType: populatedAppointment.priorityType, status: populatedAppointment.status, calledAt: populatedAppointment.calledAt, calledBy: populatedAppointment.calledBy,
       },
     });
   } catch (error) {
-    console.error(
-      'Dentist call-next error:',
-      error,
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Failed to call the next patient.',
-    });
+    console.error('Dentist call-next error:', error);
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to call the next patient.' });
   }
 };
-
 
 /**
  * ==========================================================
