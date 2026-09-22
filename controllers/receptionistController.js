@@ -1,3 +1,5 @@
+const VisitPurpose = require("../models/VisitPurpose");
+
 const Appointments = require('../models/Appointments');
 const User = require('../models/user');
 const WorkingHours = require('../models/WorkingHours');
@@ -816,3 +818,29 @@ exports.deletePatient =
       });
     }
   };
+
+exports.getVisitPurposeList = async (req, res) => {
+  try {
+    const visitPurposelist = await VisitPurpose.find();
+    if (visitPurposelist != null) {
+      return res.status(200).json({
+        success: true,
+        message: "Visit Purpose list Loaded Successfully",
+        purposeList: visitPurposelist,
+      })
+    } 
+
+    return res.status(404).json({
+        success: false,
+        message: "Visit Purpose list Empty",
+        purposeList: [],
+      })
+
+  } catch (ex) {
+    console.log(ex);
+    return res.status(500).json({
+        success: false,
+        message: "Server Error",
+      })
+  }
+}

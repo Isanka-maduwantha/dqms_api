@@ -1,3 +1,5 @@
+const VisitPurpose = require('../models/VisitPurpose');
+
 const WorkingHours = require('../models/WorkingHours');
 
 const defaultHours = [
@@ -16,4 +18,18 @@ async function seedWorkingHours() {
   console.log('Working hours seeded for 09:00-22:00 clinic hours.');
 }
 
-module.exports = seedWorkingHours;
+const visitingPurposeList = [
+  { purpose: "New Treatment" },
+  { purpose: "Follow Up Review" },
+  { purpose: "Routine Checkup" }
+];
+async function seedVisitingPurpose(){
+  await VisitPurpose.deleteMany({});
+  await VisitPurpose.insertMany(visitingPurposeList);
+  console.log("Visiting Purpose Seeded")
+}
+
+module.exports = {
+  seedWorkingHours,
+  seedVisitingPurpose
+};

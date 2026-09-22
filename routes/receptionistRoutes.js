@@ -45,6 +45,11 @@ router.delete(
   receptionistController.deletePatient
 );
 
+router.get(
+  '/visitPurpose',
+  receptionistController.getVisitPurposeList
+);
+
 // ==========================================================
 // APPOINTMENTS & QUEUE
 // ==========================================================
